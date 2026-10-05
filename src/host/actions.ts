@@ -28,6 +28,12 @@ function safeBranch(name: string): PlanResult | null {
   return null
 }
 
+/** Network-bound git commands: they stall on remote round-trips, so they run
+ * under the generous network timeout instead of the fast local-command cap. */
+export function isNetworkCommand(argv: readonly string[]): boolean {
+  return argv[0] === 'git' && (argv[1] === 'fetch' || argv[1] === 'pull' || argv[1] === 'push')
+}
+
 /** Build the git command sequence for an action. */
 export function planAction(action: GitAction, unborn: boolean): PlanResult {
   switch (action.kind) {
@@ -64,8 +70,43 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       if (bad) return bad
       return { argv: [['git', 'checkout', '--end-of-options', action.name]] }
     }
-    case 'fetch':
-      return { argv: [['git', 'fetch', '--all', '--prune']] }
+    case 'fetch': {
+      // Default (no fields) keeps the historical `--all --prune` behavior.
+      const args = ['git', 'fetch']
+      if (action.remote !== undefined && action.remote !== '') {
+        const bad = safeBranch(action.remote)
+        if (bad) return bad
+        args.push('--end-of-options', action.remote)
+      } else {
+        args.push('--all')
+      }
+      if (action.prune !== false) args.push('--prune')
+      return { argv: [args] }
+    }
+    case 'pull': {
+      if (!isSafeRev(action.remote)) return { error: 'invalid-name', message: `unsafe remote: ${action.remote}` }
+      if (action.branch !== undefined && action.branch !== '' && !isSafeBranchName(action.branch)) {
+        return { error: 'invalid-name', message: `unsafe branch: ${action.branch}` }
+      }
+      const args = ['git', 'pull']
+      if (action.rebase === true) args.push('--rebase')
+      if (action.autostash === true) args.push('--autostash')
+      args.push('--end-of-options', action.remote)
+      if (action.branch !== undefined && action.branch !== '') args.push(action.branch)
+      return { argv: [args] }
+    }
+    case 'push': {
+      if (!isSafeRev(action.remote)) return { error: 'invalid-name', message: `unsafe remote: ${action.remote}` }
+      if (!isSafeBranchName(action.branch)) return { error: 'invalid-name', message: `unsafe branch: ${action.branch}` }
+      const to = action.toBranch ?? action.branch
+      if (!isSafeBranchName(to)) return { error: 'invalid-name', message: `unsafe branch: ${to}` }
+      const args = ['git', 'push']
+      if (action.setUpstream === true) args.push('--set-upstream')
+      if (action.tags === true) args.push('--tags')
+      if (action.force === true) args.push('--force')
+      args.push('--end-of-options', action.remote, `refs/heads/${action.branch}:refs/heads/${to}`)
+      return { argv: [args] }
+    }
     case 'create-branch': {
       const bad = safeBranch(action.name)
       if (bad) return bad
@@ -205,7 +246,8 @@ export async function runAction(
   let lastOutput = ''
   for (let step = 0; step < plan.argv.length; step += 1) {
     const argv = plan.argv[step]!
-    const outcome = await runCommand(deps.run, argv, root, 'action', deps.signal)
+    const outcome = await runCommand(deps.run, argv, root, 'action', deps.signal, undefined,
+      isNetworkCommand(argv) ? config.networkTimeoutMs : undefined)
     const where = plan.argv.length > 1 ? ` (step ${step + 1}/${plan.argv.length}: ${argv.join(' ')})` : ''
     if ('failure' in outcome) {
       const message = outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure)
@@ -221,9 +263,9 @@ export async function runAction(
       if (action.kind === 'create-tag' && action.push === true && step > 0) {
         return { ok: false, error: { code: 'git-error', message: `tag created locally, but push failed: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
       }
-      // Merge conflicts: surface as a typed conflicted result with the file
+      // Merge/pull conflicts: surface as a typed conflicted result with the file
       // list so the client can jump straight to the conflict banner.
-      if (request.action.kind === 'merge' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
+      if (request.action.kind === 'merge' || request.action.kind === 'pull' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
         const files = await readConflictFiles(deps, root)
         if (files.length > 0 || /conflict|CONFLICT|needs merge|already exists/i.test(stderr + lastOutput)) {
           const snapshot = await snapshotForSession(deps, config, request.sessionId)

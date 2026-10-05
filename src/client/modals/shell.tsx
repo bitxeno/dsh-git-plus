@@ -35,13 +35,18 @@ export function ModalFooter(props: {
   readonly onConfirm: () => void
   readonly busy: boolean
   readonly disabled?: boolean
+  /** Confirm-button label; the generic confirm key when absent. */
+  readonly confirmLabel?: string
 }): JSX.Element {
   return h('div', { className: 'gp-dialog__foot' }, [
     h('button', { key: 'c', type: 'button', className: 'gp-btn', onClick: props.onClose }, props.t('modal.cancel')),
     h('button', {
       key: 'ok', type: 'button', className: 'gp-btn gp-btn--primary',
       disabled: props.busy || props.disabled === true, onClick: props.onConfirm,
-    }, props.t('modal.confirm')),
+    }, [
+      props.busy ? h('span', { key: 's', className: 'gp-spin', 'aria-hidden': 'true' }) : null,
+      props.confirmLabel ?? props.t('modal.confirm'),
+    ]),
   ])
 }
 

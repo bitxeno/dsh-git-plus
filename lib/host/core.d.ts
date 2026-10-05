@@ -2,6 +2,8 @@ import type { GitRunner } from './git.ts';
 import type { DiffViewMode, GitChange, GitErrorCode, GitSnapshotResult } from './types.ts';
 export interface GitPanelConfig {
     readonly timeoutMs: number;
+    /** Timeout for network-bound commands (fetch/pull/push); overrides `timeoutMs` per call. */
+    readonly networkTimeoutMs: number;
     /** Per-command stdout cap; also the per-side image-diff payload cap. */
     readonly maxBytes: number;
     readonly maxChanges: number;
@@ -91,7 +93,7 @@ export declare function resolveBrowseRoot(deps: SnapshotDeps, sessionId: string)
 /** Resolve the git work-tree root for a session's cwd. */
 export declare function resolveWorkspace(deps: SnapshotDeps, sessionId: string): Promise<WorkspaceResolution>;
 /** Run one git command; a spawn-level failure returns { failure }. */
-export declare function runCommand(runner: GitRunner, argv: readonly string[], cwd: string, _label: string, signal?: AbortSignal, stdinData?: string): Promise<{
+export declare function runCommand(runner: GitRunner, argv: readonly string[], cwd: string, _label: string, signal?: AbortSignal, stdinData?: string, timeoutMs?: number): Promise<{
     run: Awaited<ReturnType<GitRunner['run']>>;
 } | {
     failure: unknown;

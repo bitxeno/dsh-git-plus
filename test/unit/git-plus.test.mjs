@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -29,6 +29,41 @@ describe('planAction git-plus', () => {
   it('rejects unsafe branch name', () => {
     const r = planAction({ kind: 'create-branch', name: '-evil' }, false)
     assert.ok('error' in r)
+  })
+  it('flags fetch/pull/push commands for the network timeout', () => {
+    assert.equal(isNetworkCommand(['git', 'fetch', '--all', '--prune']), true)
+    assert.equal(isNetworkCommand(['git', 'pull', '--rebase', 'origin', 'main']), true)
+    assert.equal(isNetworkCommand(['git', 'push', 'origin', 'refs/heads/main']), true)
+    assert.equal(isNetworkCommand(['git', 'status', '--porcelain']), false)
+    assert.equal(isNetworkCommand(['git', 'commit', '-m', 'push later']), false)
+    assert.equal(isNetworkCommand(['git']), false)
+  })
+  it('plans fetch: all+prune by default, a single remote on request', () => {
+    const all = planAction({ kind: 'fetch' }, false)
+    assert.deepEqual(all.argv, [['git', 'fetch', '--all', '--prune']])
+    const one = planAction({ kind: 'fetch', remote: 'upstream' }, false)
+    assert.deepEqual(one.argv, [['git', 'fetch', '--end-of-options', 'upstream', '--prune']])
+    const noPrune = planAction({ kind: 'fetch', remote: 'origin', prune: false }, false)
+    assert.deepEqual(noPrune.argv, [['git', 'fetch', '--end-of-options', 'origin']])
+  })
+  it('rejects unsafe fetch/pull remotes and pull branches', () => {
+    assert.ok('error' in planAction({ kind: 'fetch', remote: '-evil' }, false))
+    assert.ok('error' in planAction({ kind: 'pull', remote: '-evil', branch: 'main' }, false))
+    assert.ok('error' in planAction({ kind: 'pull', remote: 'origin', branch: '~bad' }, false))
+    assert.ok('error' in planAction({ kind: 'push', remote: 'origin', branch: '-evil' }, false))
+    assert.ok('error' in planAction({ kind: 'push', remote: 'origin', branch: 'main', toBranch: 'a..b' }, false))
+  })
+  it('plans pull with rebase/autostash and an optional branch', () => {
+    const plain = planAction({ kind: 'pull', remote: 'origin' }, false)
+    assert.deepEqual(plain.argv, [['git', 'pull', '--end-of-options', 'origin']])
+    const full = planAction({ kind: 'pull', remote: 'origin', branch: 'main', rebase: true, autostash: true }, false)
+    assert.deepEqual(full.argv, [['git', 'pull', '--rebase', '--autostash', '--end-of-options', 'origin', 'main']])
+  })
+  it('plans push with refspec, tracking, tags and force', () => {
+    const plain = planAction({ kind: 'push', remote: 'origin', branch: 'main' }, false)
+    assert.deepEqual(plain.argv, [['git', 'push', '--end-of-options', 'origin', 'refs/heads/main:refs/heads/main']])
+    const full = planAction({ kind: 'push', remote: 'origin', branch: 'feat', toBranch: 'preview', setUpstream: true, tags: true, force: true }, false)
+    assert.deepEqual(full.argv, [['git', 'push', '--set-upstream', '--tags', '--force', '--end-of-options', 'origin', 'refs/heads/feat:refs/heads/preview']])
   })
   it('plans merge default/no-ff/ff-only/squash', () => {
     const m1 = planAction({ kind: 'merge', branch: 'feature' }, false)

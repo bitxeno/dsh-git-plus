@@ -9,6 +9,8 @@ import type { DiffViewMode, GitChange, GitCommit, GitErrorCode, GitOperationStat
 
 export interface GitPanelConfig {
   readonly timeoutMs: number
+  /** Timeout for network-bound commands (fetch/pull/push); overrides `timeoutMs` per call. */
+  readonly networkTimeoutMs: number
   /** Per-command stdout cap; also the per-side image-diff payload cap. */
   readonly maxBytes: number
   readonly maxChanges: number
@@ -21,6 +23,7 @@ export interface GitPanelConfig {
 
 export const DEFAULT_CONFIG: GitPanelConfig = {
   timeoutMs: 8000,
+  networkTimeoutMs: 300000,
   maxBytes: 4 * 1024 * 1024,
   maxChanges: 1000,
   refreshIntervalMs: 30000,
@@ -36,6 +39,7 @@ export function normalizeConfig(raw: unknown): GitPanelConfig {
     (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.floor(v) : d)
   return {
     timeoutMs: num(c.timeoutMs, DEFAULT_CONFIG.timeoutMs),
+    networkTimeoutMs: num(c.networkTimeoutMs, DEFAULT_CONFIG.networkTimeoutMs),
     maxBytes: num(c.maxBytes, DEFAULT_CONFIG.maxBytes),
     maxChanges: num(c.maxChanges, DEFAULT_CONFIG.maxChanges),
     refreshIntervalMs: num(c.refreshIntervalMs, DEFAULT_CONFIG.refreshIntervalMs),
@@ -182,9 +186,15 @@ export async function runCommand(
   _label: string,
   signal?: AbortSignal,
   stdinData?: string,
+  timeoutMs?: number,
 ): Promise<{ run: Awaited<ReturnType<GitRunner['run']>> } | { failure: unknown }> {
   try {
-    const run = await runner.run(argv, { cwd, ...(signal ? { signal } : {}), ...(stdinData !== undefined ? { stdinData } : {}) })
+    const run = await runner.run(argv, {
+      cwd,
+      ...(signal ? { signal } : {}),
+      ...(stdinData !== undefined ? { stdinData } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    })
     return { run }
   } catch (error) {
     return { failure: error }

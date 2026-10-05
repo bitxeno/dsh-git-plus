@@ -36,6 +36,33 @@ export function RefreshIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M13 8a5 5 0 1 1-1.5-3.5' }), h('path', { key: 'b', d: 'M13 2v3h-3' })], size)
 }
 
+/** Fetch: downward arrow onto a baseline (refs updated, nothing merged). */
+export function FetchIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('path', { key: 'a', d: 'M8 2.5v7.5' }),
+    h('path', { key: 'b', d: 'M4.8 6.8 8 10l3.2-3.2' }),
+    h('line', { key: 'c', x1: 3, y1: 13.2, x2: 13, y2: 13.2 }),
+  ], size)
+}
+
+/** Pull: downward arrow into an open-top tray (fetch + merge). */
+export function PullIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('path', { key: 'a', d: 'M3 6.5v3.7a2.3 2.3 0 0 0 2.3 2.3h5.4A2.3 2.3 0 0 0 13 10.2V6.5' }),
+    h('path', { key: 'b', d: 'M8 2.5v7' }),
+    h('path', { key: 'c', d: 'M5.2 6.8 8 9.6l2.8-2.8' }),
+  ], size)
+}
+
+/** Push: upward arrow out of an open-top tray. */
+export function PushIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('path', { key: 'a', d: 'M3 9.5v1.2a2.3 2.3 0 0 0 2.3 2.3h5.4A2.3 2.3 0 0 0 13 10.7V9.5' }),
+    h('path', { key: 'b', d: 'M8 13V5' }),
+    h('path', { key: 'c', d: 'M5.2 7.2 8 4.4l2.8 2.8' }),
+  ], size)
+}
+
 export function FileIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M4 2h5l3 3v9H4z' }), h('path', { key: 'b', d: 'M9 2v3h3' })], size)
 }

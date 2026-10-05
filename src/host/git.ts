@@ -56,20 +56,21 @@ export interface GitRunResult {
 }
 
 export interface GitRunner {
-  run(argv: readonly string[], opts: { readonly cwd: string; readonly signal?: AbortSignal; readonly stdinData?: string }): Promise<GitRunResult>
+  run(argv: readonly string[], opts: { readonly cwd: string; readonly signal?: AbortSignal; readonly stdinData?: string; /** Per-call timeout override; the runner default when absent. */ readonly timeoutMs?: number }): Promise<GitRunResult>
 }
 
 /**
  * Adapt the subprocess service into a `GitRunner` with a per-command timeout.
  * A timed-out run resolves (never rejects) with `timedOut: true`; only
- * spawn-level failures (e.g. git not installed) reject.
+ * spawn-level failures (e.g. git not installed) reject. Network-bound commands
+ * (fetch/pull/push) pass a longer `timeoutMs` override per call.
  */
 export function createGitRunner(subprocess: SubprocessLike, timeoutMs: number, maxBytes: number): GitRunner {
   const spillMaxBytes = maxBytes * 16
   return {
     async run(argv, opts) {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? timeoutMs)
       try {
         const signal = opts.signal === undefined
           ? controller.signal

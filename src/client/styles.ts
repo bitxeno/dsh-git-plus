@@ -56,6 +56,9 @@ const CSS = `
 .gp-btn:disabled{opacity:.4;cursor:not-allowed}
 .gp-btn--primary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
 .gp-btn--primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+/* Busy spinner inside confirm buttons while a long action (push/pull/fetch) runs. */
+.gp-spin{width:12px;height:12px;flex:none;border:1.5px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;border-radius:50%;animation:gp-spin .7s linear infinite}
+@keyframes gp-spin{to{transform:rotate(360deg)}}
 .gp-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:none}
 .gp-icon-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .gp-icon-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -115,6 +118,7 @@ const CSS = `
 .gp-search:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
 .gp-select{height:32px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;padding:0 24px 0 10px;appearance:none;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;cursor:pointer}
 .gp-select:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
+.gp-select:disabled{opacity:.5;cursor:not-allowed}
 
 /* commit detail (right pane): the changed-file tree and the commit message
  * split the column in half, each scrolling on its own. Equal halves keep the
@@ -396,9 +400,9 @@ const CSS = `
 .gp-side__nav--active{background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-elevation-soft);color:var(--dsw-alias-label-primary)}
 .gp-side__nav > span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .gp-side__badge{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:11px;line-height:17px;font-weight:500;white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-primary)}
-.gp-side__search input{width:100%;box-sizing:border-box;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px}
-.gp-side__search input::placeholder{color:var(--dsw-alias-label-dimmed)}
-.gp-side__search input:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
+.gp-side__net{display:flex;align-items:center;justify-content:center;gap:8px;padding:5px 4px;border-top:.5px solid var(--dsw-alias-border-l2);border-bottom:.5px solid var(--dsw-alias-border-l2)}
+.gp-side__net button{display:inline-flex;align-items:center;justify-content:center;width:36px;height:28px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.gp-side__net button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .gp-side__group{border-top:1px solid var(--dsw-alias-border-l1);padding-top:6px}
 .gp-side__hact{display:flex;gap:2px;margin-left:auto;opacity:0}
 .gp-branch-group__head:hover .gp-side__hact,.gp-side__hact:focus-within{opacity:1}
@@ -436,6 +440,7 @@ const CSS = `
 .gp-modal__err{color:var(--dsw-alias-state-error-primary);font-size:12px}
 .gp-field{display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
 .gp-field input[type=text]{box-sizing:border-box;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}
+.gp-modal__into{display:inline-flex;align-items:center;gap:6px;height:32px;font-size:13px;color:var(--dsw-alias-label-primary)}
 .gp-field input[type=text]::placeholder{color:var(--dsw-alias-label-dimmed)}
 .gp-field input[type=text]:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
 /* Checkbox row inside a form dialog. Deliberately NOT the bare-input class:
@@ -443,6 +448,7 @@ const CSS = `
  * flex box that wrapped its text one character per line. */
 .gp-check-row{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
 .gp-check-row input{flex:none;width:16px;height:16px;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}
+.gp-check-row--danger{color:var(--dsw-alias-state-error-primary)}
 .gp-radio{display:flex;flex-direction:column;gap:8px}
 .gp-btn--primary{background:var(--dsw-alias-state-business-primary,#5ac8fa);color:#fff;border-radius:8px;padding:6px 14px}
 .gp-rail{display:flex;flex-direction:column;overflow:auto}

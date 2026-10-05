@@ -9,6 +9,9 @@ type PlanResult = CommandPlan | {
     readonly error: GitErrorCode;
     readonly message?: string;
 };
+/** Network-bound git commands: they stall on remote round-trips, so they run
+ * under the generous network timeout instead of the fast local-command cap. */
+export declare function isNetworkCommand(argv: readonly string[]): boolean;
 /** Build the git command sequence for an action. */
 export declare function planAction(action: GitAction, unborn: boolean): PlanResult;
 /** Default push target: `origin` when present, else the first configured

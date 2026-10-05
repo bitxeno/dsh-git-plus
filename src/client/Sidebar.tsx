@@ -1,8 +1,9 @@
 /**
- * dsh-git-plus sidebar: top nav (Local Changes / All Commits) + collapsible
- * groups (Branches / Remotes / Tags / Stashes). Clicking a branch/tag
- * filters All Commits; row actions live in a right-click menu; double-click
- * a branch to check it out, double-click a tag to confirm-checkout its code.
+ * dsh-git-plus sidebar: top nav (Local Changes / All Commits), a fetch/pull/
+ * push sync toolbar, and collapsible groups (Branches / Remotes / Tags /
+ * Stashes). Clicking a branch/tag filters All Commits; row actions live in a
+ * right-click menu; double-click a branch to check it out, double-click a tag
+ * to confirm-checkout its code.
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react'
 import type { JSX } from 'react'
@@ -10,7 +11,7 @@ import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, CommitIcon, RefreshIcon, TagIcon } from './icons'
+import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
 
 export interface SidebarSelection {
@@ -25,7 +26,7 @@ interface SidebarProps {
   readonly selection: SidebarSelection
   readonly onSelect: (sel: SidebarSelection) => void
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
-  readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash', preset?: string) => void
+  readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push', preset?: string) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
   readonly onDeleteRef: (kind: 'branch' | 'tag', name: string) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
@@ -61,7 +62,6 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, t } = props
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
-  const [filter, setFilter] = useState('')
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   const [armedStashDrop, setArmedStashDrop] = useState<number | null>(null)
@@ -99,11 +99,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     })
   }
 
-  const f = filter.trim().toLowerCase()
-  const match = (s: string): boolean => f === '' || s.toLowerCase().includes(f)
-  const local = useMemo(() => (tree?.local ?? []).filter((b) => match(b.name)), [tree, f])
-  const tags = useMemo(() => (tree?.tags ?? []).filter((b) => match(b.name)), [tree, f])
-  const stashes = useMemo(() => (tree?.stashes ?? []).filter((s) => match(s.message)), [tree, f])
+  const local = useMemo(() => tree?.local ?? [], [tree])
+  const tags = useMemo(() => tree?.tags ?? [], [tree])
+  const stashes = useMemo(() => tree?.stashes ?? [], [tree])
 
   const run = async (action: GitAction): Promise<void> => { await onAction(action) }
 
@@ -207,10 +205,11 @@ export function Sidebar(props: SidebarProps): JSX.Element {
         onClick: () => onSelect({ view: 'commits', refFilter: selection.refFilter }),
       }, t('side.commits')),
     ]),
-    h('div', { key: 'search', className: 'gp-side__search' }, h('input', {
-      type: 'text', value: filter, placeholder: t('side.search'),
-      onChange: (e: { target: { value: string } }) => setFilter(e.target.value),
-    })),
+    h('div', { key: 'net', className: 'gp-side__net' }, [
+      h('button', { key: 'fetch', type: 'button', title: t('side.fetch'), onClick: () => onOpenModal('fetch') }, h(FetchIcon, { size: 15 })),
+      h('button', { key: 'pull', type: 'button', title: t('side.pull'), onClick: () => onOpenModal('pull') }, h(PullIcon, { size: 15 })),
+      h('button', { key: 'push', type: 'button', title: t('side.push'), onClick: () => onOpenModal('push') }, h(PushIcon, { size: 15 })),
+    ]),
     error ? h('div', { key: 'err', className: 'gp-side__error' }, t('overview.branchesError')) : null,
     h(Group, {
       key: 'branches', title: t('side.branches'), count: local.length, open: !closed.has('branches'),

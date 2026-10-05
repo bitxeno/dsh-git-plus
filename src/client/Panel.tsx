@@ -16,6 +16,7 @@ import { CreateBranchModal } from './modals/CreateBranch'
 import { CreateTagModal } from './modals/CreateTag'
 import { MergeBranchModal } from './modals/MergeBranch'
 import { StashSaveModal } from './modals/StashSave'
+import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
 import type { GitAction } from './types'
 import type { GitKey } from './locales'
@@ -31,6 +32,9 @@ type ModalState =
   | { kind: 'tag'; ref?: string }
   | { kind: 'merge'; preset?: string }
   | { kind: 'stash' }
+  | { kind: 'fetch' }
+  | { kind: 'pull' }
+  | { kind: 'push' }
   | { kind: 'checkout'; ref: string; subject: string }
   | { kind: 'confirm'; title: string; message: string; action: GitAction }
   | null
@@ -162,6 +166,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         if (kind === 'branch') setModal({ kind: 'branch', ...(preset !== undefined ? { startPoint: preset } : {}) })
         else if (kind === 'tag') setModal({ kind: 'tag', ...(preset !== undefined ? { ref: preset } : {}) })
         else if (kind === 'merge') setModal({ kind: 'merge', preset })
+        else if (kind === 'fetch' || kind === 'pull' || kind === 'push') setModal({ kind })
         else setModal({ kind: 'stash' })
       },
       onCheckoutRef: (ref, subject) => setModal({ kind: 'checkout', ref, subject }),
@@ -184,17 +189,25 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
       }) : null,
       h('div', { key: 'content', className: 'gp-plus__content' }, body),
     ]),
-    modal !== null ? h('div', { key: 'modal' }, renderModal(modal, { onAction, onClose: () => setModal(null), t })) : null,
+    modal !== null ? h('div', { key: 'modal' }, renderModal(modal, { remote, sessionId: sessionId ?? '', onAction, onClose: () => setModal(null), t })) : null,
   ])
 }
 
-function renderModal(
-  modal: NonNullable<ModalState>,
-  ctx: { onAction: (a: GitAction) => Promise<{ ok: boolean; error?: string }>; onClose: () => void; t: (key: GitKey) => string },
-): JSX.Element {
+interface ModalCtx {
+  readonly remote: GitPanelRemote
+  readonly sessionId: string
+  readonly onAction: (a: GitAction) => Promise<{ ok: boolean; error?: string }>
+  readonly onClose: () => void
+  readonly t: (key: GitKey) => string
+}
+
+function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element {
   if (modal.kind === 'branch') return h(CreateBranchModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.startPoint !== undefined ? { startPoint: modal.startPoint } : {}) })
   if (modal.kind === 'tag') return h(CreateTagModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.ref !== undefined ? { initialRef: modal.ref } : {}) })
   if (modal.kind === 'stash') return h(StashSaveModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'fetch') return h(FetchModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'pull') return h(PullModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'push') return h(PushModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'checkout') return h(CheckoutModal, { t: ctx.t, refName: modal.ref, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })
@@ -234,6 +247,7 @@ function errorText(code: string, message: string | undefined, t: (key: GitKey) =
     case 'cwd-unavailable': return t('error.noCwd')
     case 'local-changes-block': return t('error.localChangesBlock')
     case 'no-remote': return t('error.noRemote')
+    case 'timeout': return t('error.timeout')
     default: return message ?? t('error.generic')
   }
 }

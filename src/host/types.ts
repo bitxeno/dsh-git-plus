@@ -118,7 +118,36 @@ export type GitAction =
     readonly amend?: boolean
   }
   | { readonly kind: 'branch-checkout'; readonly name: string }
-  | { readonly kind: 'fetch' }
+  | {
+    readonly kind: 'fetch'
+    /** Fetch every configured remote (--all); the default when `remote` is absent. */
+    readonly all?: boolean
+    /** Single remote to fetch; ignored (and defaulted to --all) when unset. */
+    readonly remote?: string
+    /** Prune stale remote-tracking refs; on unless explicitly disabled. */
+    readonly prune?: boolean
+  }
+  | {
+    readonly kind: 'pull'
+    readonly remote: string
+    /** Remote branch to pull; the remote HEAD when absent. */
+    readonly branch?: string
+    readonly rebase?: boolean
+    /** Stash local changes before and reapply them after (--autostash). */
+    readonly autostash?: boolean
+  }
+  | {
+    readonly kind: 'push'
+    readonly remote: string
+    readonly branch: string
+    /** Remote branch name to update; same as `branch` when absent. */
+    readonly toBranch?: string
+    /** Establish a tracking reference (--set-upstream). */
+    readonly setUpstream?: boolean
+    /** Also push every tag (--tags). */
+    readonly tags?: boolean
+    readonly force?: boolean
+  }
   | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean }
   | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean }
   | {
@@ -262,7 +291,7 @@ export type GitQueryResult =
     readonly body: string
     readonly stats: readonly GitFileStat[]
   }
-  | { readonly kind: 'branches'; readonly current: string | null; readonly defaultBranch: string | null; readonly local: readonly GitBranch[]; readonly remote: readonly GitBranch[] }
+  | { readonly kind: 'branches'; readonly current: string | null; readonly defaultBranch: string | null; readonly local: readonly GitBranch[]; readonly remote: readonly GitBranch[]; readonly remotes: readonly string[] }
   | { readonly kind: 'tags'; readonly tags: readonly GitBranch[] }
   | { readonly kind: 'authors'; readonly authors: readonly string[] }
   | { readonly kind: 'last-commit-message'; readonly message: string }

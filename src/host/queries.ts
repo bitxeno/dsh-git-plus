@@ -556,8 +556,9 @@ async function queryBranches(deps: SnapshotDeps, root: string): Promise<GitQuery
     defaultBranch = raw.replace(/^origin\//, '') || null
   }
   // The response keeps an always-array shape; only the marker above cares about
-  // the unknown-vs-empty distinction.
-  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote: remote ?? [] } }
+  // the unknown-vs-empty distinction. `remotes` feeds the fetch/pull/push
+  // dialogs (configured remote names, `git remote` order).
+  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote: remote ?? [], remotes } }
 }
 
 async function queryTags(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
