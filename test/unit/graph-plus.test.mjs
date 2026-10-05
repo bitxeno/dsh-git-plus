@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFullGraph, buildPathD, computeCurrentBranchSet } from '../../lib/testkit.mjs'
+import { buildFullGraph, buildPathD, computeCurrentBranchSet, computeRefAncestorSet } from '../../lib/testkit.mjs'
 
 const linear = [
   { hash: 'c3', parents: ['c2'], refs: [{ type: 'head', name: 'main' }] },
@@ -58,5 +58,24 @@ describe('buildFullGraph (git-graph-plus port)', () => {
     const set = computeCurrentBranchSet(linear)
     assert.deepEqual([...set].sort(), ['c1', 'c2', 'c3'])
     assert.deepEqual([...computeCurrentBranchSet([])], [])
+  })
+  it('computeCurrentBranchSet falls back to a detached HEAD hash', () => {
+    const detached = [
+      { hash: 'n2', parents: ['c3'], refs: [] },
+      ...linear.map((c) => ({ ...c, refs: [] })),
+    ]
+    assert.deepEqual([...computeCurrentBranchSet(detached)], [])
+    const set = computeCurrentBranchSet(detached, 'c3')
+    assert.deepEqual([...set].sort(), ['c1', 'c2', 'c3'])
+  })
+  it('computeRefAncestorSet walks the selected ref ancestry only', () => {
+    const commits = [
+      { hash: 'f1', parents: ['m1'], refs: [{ type: 'branch', name: 'feature' }] },
+      { hash: 'm1', parents: ['b1'], refs: [{ type: 'branch', name: 'main' }] },
+      { hash: 'b1', parents: [], refs: [] },
+    ]
+    assert.deepEqual([...computeRefAncestorSet(commits, 'main')].sort(), ['b1', 'm1'])
+    assert.deepEqual([...computeRefAncestorSet(commits, 'feature')].sort(), ['b1', 'f1', 'm1'])
+    assert.deepEqual([...computeRefAncestorSet(commits, 'nope')], [])
   })
 })

@@ -31,6 +31,7 @@ export function CreateTagModal(props: {
   }
   return h(ModalShell, {
     title: props.t('modal.createTag'), onClose: props.onClose, children: [
+      props.initialRef !== undefined && props.initialRef !== '' ? h('div', { key: 'at', className: 'gp-modal__subject' }, `${props.t('modal.createAt')}: ${props.initialRef}`) : null,
       h(Field, {
         key: 'n', label: props.t('modal.name'), children:
           h('input', { type: 'text', value: name, placeholder: 'v0.1.0', onChange: (e: { target: { value: string } }) => setName(e.target.value) }),

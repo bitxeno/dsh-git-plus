@@ -40,6 +40,10 @@ export function FileIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M4 2h5l3 3v9H4z' }), h('path', { key: 'b', d: 'M9 2v3h3' })], size)
 }
 
+export function FolderIcon({ size }: IconProps): JSX.Element {
+  return svg([h('path', { key: 'a', d: 'M2 5c0-1.1.9-2 2-2h3l1.5 2h5c1.1 0 2 .9 2 2v5.5c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2z' })], size)
+}
+
 export function FilesIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M5 2.5h4l2.5 2.5v7.5h-6.5z' }), h('path', { key: 'b', d: 'M9 2.5V5h2.5' }), h('path', { key: 'c', d: 'M11 12.5v1.5h-6.5V6' })], size)
 }

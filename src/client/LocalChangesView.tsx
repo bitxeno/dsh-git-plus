@@ -10,7 +10,8 @@ import type { GitAction, GitChange, GitSnapshot } from './types'
 import type { GitKey } from './locales'
 import { ChangeStats } from './ChangeStats'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
-import { ChevronIcon } from './icons'
+import { ChevronIcon, FolderIcon } from './icons'
+import { buildFileTree, type FileTreeNode } from './file-tree'
 import { statusChar, statusClass } from './status'
 import { useResizableColumn } from './resizable'
 import { segButtons } from './seg'
@@ -23,15 +24,16 @@ interface ChangesTabProps {
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
-type GroupKey = 'staged' | 'unstaged' | 'untracked'
+type GroupKey = 'unstaged' | 'staged'
 
 export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: ChangesTabProps): JSX.Element {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [closed, setClosed] = useState<ReadonlySet<GroupKey>>(new Set())
+  const [closedDirs, setClosedDirs] = useState<ReadonlySet<string>>(new Set())
+  const [activeDir, setActiveDir] = useState<string | null>(null)
   const [armedDiscard, setArmedDiscard] = useState<string | null>(null)
   const [diffPath, setDiffPath] = useState<{ path: string; base: 'worktree' | 'staged' } | null>(null)
   const [diffText, setDiffText] = useState<string | null>(null)
@@ -40,30 +42,24 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   const [amendPrefilled, setAmendPrefilled] = useState(false)
   const diffSeq = useRef(0)
 
+  // Two blocks like the reference layout: Unstaged (tracked + untracked,
+  // anything not staged) first, then Staged.
   const staged = useMemo(() => snapshot.changes.filter((c) => c.staged).sort(byPath), [snapshot])
-  const unstaged = useMemo(() => snapshot.changes.filter((c) => !c.staged && c.status !== 'untracked').sort(byPath), [snapshot])
-  const untracked = useMemo(() => snapshot.changes.filter((c) => c.status === 'untracked').sort(byPath), [snapshot])
+  const unstaged = useMemo(() => snapshot.changes.filter((c) => !c.staged).sort(byPath), [snapshot])
 
-  const allGroups: Array<{ key: GroupKey; labelKey: GitKey; items: GitChange[] }> = [
-    { key: 'staged', labelKey: 'changes.groupStaged', items: staged },
-    { key: 'unstaged', labelKey: 'changes.groupUnstaged', items: unstaged },
-    { key: 'untracked', labelKey: 'changes.groupUntracked', items: untracked },
-  ]
-  const groups = allGroups.filter((g) => g.items.length > 0)
+  const stagedTree = useMemo(() => buildFileTree(staged.map((c) => ({ path: c.path, meta: c }))), [staged])
+  const unstagedTree = useMemo(() => buildFileTree(unstaged.map((c) => ({ path: c.path, meta: c }))), [unstaged])
 
-  // Prune selection to living paths (avoid a stale path aborting a commit).
-  // Selection keys are `path:s`/`path:w`; a key survives only if a change with
-  // that path and side still exists.
+  // Prune the active folder key when it disappears from the snapshot.
   useEffect(() => {
-    setSelected((prev) => {
-      if (prev.size === 0) return prev
-      const alive = new Set(snapshot.changes.map((c) => c.path + (c.staged ? ':s' : ':w')))
-      const next = new Set<string>()
-      let changed = false
-      for (const k of prev) { if (alive.has(k)) next.add(k); else changed = true }
-      return changed ? next : prev
-    })
-  }, [snapshot])
+    if (activeDir === null) return
+    const sep = activeDir.indexOf(':')
+    const side = activeDir.slice(0, sep)
+    const dir = activeDir.slice(sep + 1)
+    const alive = snapshot.changes.some((c) =>
+      (side === 's') === c.staged && (c.path === dir || c.path.startsWith(dir + '/')))
+    if (!alive) setActiveDir(null)
+  }, [snapshot, activeDir])
 
   // Prefill amend message from the last commit when the box is toggled on empty.
   useEffect(() => {
@@ -82,6 +78,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   const showDiff = useCallback(async (path: string, base: 'worktree' | 'staged', expand = false, keepPrevious = false) => {
     const seq = ++diffSeq.current
     setDiffPath({ path, base })
+    setActiveDir(null)
     // Only blank the pane on a user-initiated open; a background re-pull keeps
     // the current text so a poll/snapshot tick doesn't flash "Loading".
     if (!keepPrevious) setDiffText(null)
@@ -107,14 +104,6 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   // may be gone) so the destructive "click again" state can't linger.
   useEffect(() => { setArmedDiscard(null) }, [snapshot])
 
-  const toggle = (path: string): void => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path); else next.add(path)
-      return next
-    })
-  }
-
   const run = async (action: GitAction): Promise<boolean> => {
     if (busy) return false
     setBusy(true)
@@ -134,10 +123,8 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   const commit = async (): Promise<void> => {
     const text = message.trim()
     if (text === '' && !amend) { setError(t('error.emptyMessage')); return }
-    // Selection keys carry a :s/:w side suffix; commit works on bare paths.
-    const paths = selected.size > 0 ? [...new Set([...selected].map((k) => k.replace(/:[sw]$/, '')))] : undefined
-    const ok = await run({ kind: 'commit', message: text, ...(paths ? { paths } : {}), ...(amend ? { amend: true } : {}) })
-    if (ok) { setMessage(''); setSelected(new Set()); setAmend(false); setAmendPrefilled(false) }
+    const ok = await run({ kind: 'commit', message: text, ...(amend ? { amend: true } : {}) })
+    if (ok) { setMessage(''); setAmend(false); setAmendPrefilled(false) }
   }
 
   const toggleGroup = (key: GroupKey): void => {
@@ -147,6 +134,129 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
       return next
     })
   }
+
+  const toggleDir = (path: string): void => {
+    setClosedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path); else next.add(path)
+      return next
+    })
+  }
+
+  /** All changed-file paths under a tree node (the node itself if a file). */
+  const collectLeafPaths = (node: FileTreeNode): string[] => {
+    if (!node.dir) return [(node.meta as GitChange).path]
+    return node.children.flatMap(collectLeafPaths)
+  }
+
+  const findTreeNode = (nodes: readonly FileTreeNode[], path: string): FileTreeNode | null => {
+    for (const node of nodes) {
+      if (node.path === path) return node
+      if (node.dir) {
+        const found = findTreeNode(node.children, path)
+        if (found !== null) return found
+      }
+    }
+    return null
+  }
+
+  /**
+   * Paths the group header button acts on: the selected folder's files (when
+   * the selection is inside this group), the open diff's file, or null for
+   * the whole group when nothing relevant is selected.
+   */
+  const selectedPathsFor = (tree: readonly FileTreeNode[], stagedSide: boolean): string[] | null => {
+    const sideKey = stagedSide ? 's' : 'w'
+    if (activeDir !== null && activeDir.startsWith(`${sideKey}:`)) {
+      const node = findTreeNode(tree, activeDir.slice(2))
+      return node !== null ? collectLeafPaths(node) : []
+    }
+    if (diffPath !== null && (diffPath.base === 'staged') === stagedSide) return [diffPath.path]
+    return null
+  }
+
+  const stagePaths = (paths: readonly string[], stagedSide: boolean): void => {
+    if (paths.length === 0 || busy) return
+    void run(stagedSide ? { kind: 'unstage', paths: [...paths] } : { kind: 'stage', paths: [...paths] })
+  }
+
+  const renderTree = (nodes: readonly FileTreeNode[], depth: number, stagedSide: boolean): JSX.Element[] => {
+    const out: JSX.Element[] = []
+    const sideKey = stagedSide ? 's' : 'w'
+    for (const node of nodes) {
+      if (node.dir) {
+        const dirKey = `${sideKey}:${node.path}`
+        const open = !closedDirs.has(dirKey)
+        const paths = collectLeafPaths(node)
+        out.push(h('div', {
+          key: `d:${dirKey}`,
+          className: `gp-tdir${activeDir === dirKey ? ' gp-tdir--active' : ''}`,
+          style: { paddingLeft: 10 + depth * 16 },
+          title: node.path,
+          onClick: () => {
+            setActiveDir((prev) => (prev === dirKey ? null : dirKey))
+            setDiffPath(null)
+            setDiffText(null)
+          },
+          onDoubleClick: () => stagePaths(paths, stagedSide),
+        }, [
+          h('span', {
+            key: 'c', className: 'gp-tdir__chev',
+            onClick: (e: Event) => { e.stopPropagation(); toggleDir(dirKey) },
+          }, h(ChevronIcon, { size: 11, open })),
+          h('span', { key: 'i', className: 'gp-folder' }, h(FolderIcon, { size: 14 })),
+          h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
+          h('span', { key: 'act', className: 'gp-tdir__actions' }, [
+            h('button', {
+              key: 's', type: 'button', className: 'gp-icon-btn',
+              title: stagedSide ? t('changes.unstage') : t('changes.stage'),
+              disabled: busy || paths.length === 0,
+              onClick: (e: Event) => { e.stopPropagation(); stagePaths(paths, stagedSide) },
+            }, stagedSide ? '−' : '+'),
+          ]),
+        ]))
+        if (open) out.push(...renderTree(node.children, depth + 1, stagedSide))
+      } else {
+        const c = node.meta as GitChange
+        const rowKey = c.path + (c.staged ? ':s' : ':w')
+        out.push(renderFileRow(c, {
+          depth,
+          active: diffPath?.path === c.path && diffPath.base === (c.staged ? 'staged' : 'worktree'),
+          busy,
+          armed: armedDiscard === rowKey,
+          onOpen: () => void showDiff(c.path, c.staged ? 'staged' : 'worktree'),
+          onStage: () => void run(c.staged ? { kind: 'unstage', paths: [c.path] } : { kind: 'stage', paths: [c.path] }),
+          onDiscard: () => {
+            if (armedDiscard === rowKey) { void run({ kind: 'discard', paths: [c.path] }); setArmedDiscard(null) }
+            else setArmedDiscard(rowKey)
+          },
+          t,
+        }))
+      }
+    }
+    return out
+  }
+
+  const renderGroup = (
+    key: GroupKey, label: string, tree: readonly FileTreeNode[], stagedSide: boolean, count: number,
+  ): JSX.Element => h('div', { key, className: 'gp-changes__group' }, [
+    h('div', { key: 'head', className: 'gp-changes__grouphead', onClick: () => toggleGroup(key) }, [
+      h(ChevronIcon, { key: 'chev', size: 12, open: !closed.has(key) }),
+      h('span', { key: 't' }, `${label} (${count})`),
+      h('button', {
+        key: 'all', type: 'button', className: 'gp-btn',
+        disabled: busy || count === 0,
+        title: stagedSide ? t('changes.unstage') : t('changes.stage'),
+        onClick: (e: Event) => {
+          e.stopPropagation()
+          const sel = selectedPathsFor(tree, stagedSide)
+          if (sel === null) void run(stagedSide ? { kind: 'unstage-all' } : { kind: 'stage-all' })
+          else stagePaths(sel, stagedSide)
+        },
+      }, stagedSide ? t('changes.unstage') : t('changes.stage')),
+    ]),
+    closed.has(key) ? null : h('div', { key: 'tree' }, renderTree(tree, 0, stagedSide)),
+  ])
 
   const summary = diffText !== null && diffText !== '' ? diffSummary(diffText) : null
 
@@ -158,40 +268,14 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
     // left
     h('div', { key: 'left', className: 'gp-changes__left', style: { flex: `0 0 ${leftCol.width}px` } }, [
       h(ChangeStats, { key: 'stats', stats: snapshot.stats, t }),
-      h('div', { key: 'toolbar', className: 'gp-toolbar' }, [
-        h('button', { key: 'sa', type: 'button', className: 'gp-btn', disabled: busy || snapshot.changes.length === 0, onClick: () => void run({ kind: 'stage-all' }) }, t('changes.stageAll')),
-        h('button', { key: 'ua', type: 'button', className: 'gp-btn', disabled: busy || snapshot.staged === 0, onClick: () => void run({ kind: 'unstage-all' }) }, t('changes.unstageAll')),
-      ]),
       error !== null ? h('div', { key: 'err', className: 'gp-feedback' }, error) : null,
       h('div', { key: 'list', className: 'gp-changes__list' },
         snapshot.changes.length === 0
           ? h('div', { className: 'gp-empty' }, t('changes.noChanges'))
-          : groups.map((g) => h('div', { key: g.key }, [
-            h('div', { key: 'head', className: 'gp-group-head', onClick: () => toggleGroup(g.key) }, [
-              h(ChevronIcon, { key: 'chev', size: 12, open: !closed.has(g.key) }),
-              `${t(g.labelKey)} (${g.items.length})`,
-            ]),
-            closed.has(g.key) ? null : g.items.map((c) => {
-              // A path staged AND modified appears in two rows; key selection /
-              // active / armed by path+side so acting on one row doesn't light
-              // up the other (React key on the row is already path+side).
-              const rowKey = c.path + (c.staged ? ':s' : ':w')
-              return renderFileRow(c, {
-                selected: selected.has(rowKey),
-                active: diffPath?.path === c.path && diffPath.base === (c.staged ? 'staged' : 'worktree'),
-                busy,
-                armed: armedDiscard === rowKey,
-                onToggle: () => toggle(rowKey),
-                onOpen: () => void showDiff(c.path, c.staged ? 'staged' : 'worktree'),
-                onStage: () => void run(c.staged ? { kind: 'unstage', paths: [c.path] } : { kind: 'stage', paths: [c.path] }),
-                onDiscard: () => {
-                  if (armedDiscard === rowKey) { void run({ kind: 'discard', paths: [c.path] }); setArmedDiscard(null) }
-                  else setArmedDiscard(rowKey)
-                },
-                t,
-              })
-            }),
-          ]))),
+          : [
+            renderGroup('unstaged', t('changes.groupUnstaged'), unstagedTree, false, unstaged.length),
+            renderGroup('staged', t('changes.groupStaged'), stagedTree, true, staged.length),
+          ]),
       // commit box
       h('div', { key: 'box', className: 'gp-commitbox' }, [
         h('textarea', {
@@ -246,11 +330,10 @@ function byPath(a: GitChange, b: GitChange): number {
 }
 
 interface RowActions {
-  selected: boolean
+  depth: number
   active: boolean
   busy: boolean
   armed: boolean
-  onToggle: () => void
   onOpen: () => void
   onStage: () => void
   onDiscard: () => void
@@ -259,11 +342,15 @@ interface RowActions {
 
 function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
   const name = c.path.split('/').pop() ?? c.path
-  const dir = c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : ''
-  return h('div', { key: c.path + (c.staged ? ':s' : ':w'), className: `gp-file-row${a.active ? ' gp-file-row--active' : ''}`, onClick: a.onOpen }, [
-    h('input', { key: 'cb', type: 'checkbox', className: 'gp-check', checked: a.selected, onClick: (e: Event) => e.stopPropagation(), onChange: a.onToggle }),
+  return h('div', {
+    key: c.path + (c.staged ? ':s' : ':w'),
+    className: `gp-file-row${a.active ? ' gp-file-row--active' : ''}`,
+    style: { paddingLeft: 10 + a.depth * 16 },
+    onClick: a.onOpen,
+    onDoubleClick: () => a.onStage(),
+  }, [
     h('span', { key: 'st', className: `gp-status-badge ${statusClass(c.status)}` }, statusChar[c.status] ?? '?'),
-    h('span', { key: 'nm', className: 'gp-tree-name', title: c.path }, [name, dir ? h('span', { key: 'd', style: { color: 'var(--dsw-alias-label-tertiary)', marginLeft: 6, fontSize: 11 } }, dir) : null]),
+    h('span', { key: 'nm', className: 'gp-tree-name', title: c.path }, name),
     h('span', { key: 'act', className: 'gp-file-row__actions' }, [
       h('button', { key: 'stg', type: 'button', className: 'gp-icon-btn', title: c.staged ? a.t('changes.unstage') : a.t('changes.stage'), disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onStage() } }, c.staged ? '\u2212' : '+'),
       h('button', { key: 'dis', type: 'button', className: 'gp-icon-btn', title: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'), style: a.armed ? { color: 'var(--dsw-alias-state-error-primary)' } : {}, disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onDiscard() } }, '\u21ba'),

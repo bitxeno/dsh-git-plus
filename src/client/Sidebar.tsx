@@ -10,7 +10,7 @@ import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, TagIcon } from './icons'
+import { BranchIcon, ChevronIcon, CommitIcon, RefreshIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
 
 export interface SidebarSelection {
@@ -55,6 +55,7 @@ function readClosed(): Set<string> {
 type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'branch'; readonly name: string; readonly current: boolean }
   | { readonly x: number; readonly y: number; readonly kind: 'tag'; readonly name: string }
+  | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
 export function Sidebar(props: SidebarProps): JSX.Element {
   const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, t } = props
@@ -64,6 +65,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   const [armedStashDrop, setArmedStashDrop] = useState<number | null>(null)
+  // Manual list refresh (branches/tags/stashes re-query; picks up external
+  // branch deletes without waiting for the next snapshot poll).
+  const [reloadSeq, setReloadSeq] = useState(0)
   const refreshKey = snapshot.checkedAt
 
   useEffect(() => {
@@ -83,7 +87,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       setTree({ current: b.current, local: b.local, remote: b.remote, tags: tg?.tags ?? [], stashes: st?.stashes ?? [] })
     })()
     return () => { alive = false }
-  }, [remote, sessionId, refreshKey])
+  }, [remote, sessionId, refreshKey, reloadSeq])
 
   const toggleClosed = (key: string): void => {
     setClosed((prev) => {
@@ -104,11 +108,27 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const run = async (action: GitAction): Promise<void> => { await onAction(action) }
 
   const changeCount = snapshot.staged + snapshot.modified + snapshot.untracked
-  const branchRows = local.map((b) => renderBranchRow(b, tree?.current ?? null, selection, {
+  // Detached HEAD: surface a HEAD pseudo-entry above the branches (like the
+  // reference layout); clicking it filters history to HEAD, clicking again
+  // clears back to all commits.
+  const headActive = selection.view === 'commits' && selection.refFilter === 'HEAD'
+  const headRows = snapshot.branch === null && snapshot.head !== null
+    ? [h('div', {
+      key: 'head-row',
+      className: `gp-branch-row${headActive ? ' gp-branch-row--active' : ''}`,
+      title: snapshot.head,
+      onClick: () => onSelect({ view: 'commits', refFilter: headActive ? null : 'HEAD' }),
+    }, [
+      h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(CommitIcon, { size: 13 })),
+      h('span', { key: 'n', className: 'gp-tree-name', style: { fontWeight: 700 } }, 'HEAD'),
+      h('span', { key: 'h', className: 'gp-branch-row__track' }, snapshot.head),
+    ])]
+    : []
+  const branchRows = [...headRows, ...local.map((b) => renderBranchRow(b, tree?.current ?? null, selection, {
     onSelect,
     onCheckout: () => void run({ kind: 'branch-checkout', name: b.name }),
     onMenu: (x, y) => setMenu({ x, y, kind: 'branch', name: b.name, current: b.name === tree?.current }),
-  }))
+  }))]
   const tagRows = tags.map((b) => renderTagRow(b, selection.view === 'commits' && selection.refFilter === b.name, {
     onSelect,
     onCheckout: () => onCheckoutRef(b.name, ''),
@@ -125,7 +145,11 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     ]),
   )
 
-  const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'branch'
+  const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'stash-create'
+    ? [
+      { key: 'ns', label: t('side.newStash'), onSelect: () => onOpenModal('stash') },
+    ]
+    : menu.kind === 'branch'
     ? [
       ...(menu.current ? [] : [{
         key: 'co', label: t('side.checkout'),
@@ -135,6 +159,14 @@ export function Sidebar(props: SidebarProps): JSX.Element {
         key: 'mg', label: t('side.merge'),
         onSelect: () => onOpenModal('merge', menu.name),
       }]),
+      {
+        key: 'nb', label: t('menu.createBranchAt'),
+        onSelect: () => onOpenModal('branch', menu.name),
+      },
+      {
+        key: 'nt', label: t('menu.createTagAt'),
+        onSelect: () => onOpenModal('tag', menu.name),
+      },
       { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText(menu.name) },
       ...(menu.current ? [] : [{
         key: 'del', label: t('side.delete'), danger: true,
@@ -143,6 +175,14 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     ]
     : [
       { key: 'co', label: t('menu.checkoutTag'), onSelect: () => onCheckoutRef(menu.name, '') },
+      {
+        key: 'nb', label: t('menu.createBranchAt'),
+        onSelect: () => onOpenModal('branch', menu.name),
+      },
+      {
+        key: 'nt', label: t('menu.createTagAt'),
+        onSelect: () => onOpenModal('tag', menu.name),
+      },
       { key: 'cp', label: t('menu.copyTagName'), onSelect: () => void copyText(menu.name) },
       {
         key: 'del', label: t('side.delete'), danger: true,
@@ -174,22 +214,20 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     h(Group, {
       key: 'branches', title: t('side.branches'), count: local.length, open: !closed.has('branches'),
       onToggle: () => toggleClosed('branches'),
-      actions: h('span', { className: 'gp-side__hact' }, [
-        h('button', { key: 'f', type: 'button', title: t('side.fetch'), onClick: () => void run({ kind: 'fetch' }) }, '⟳'),
-        h('button', { key: 'n', type: 'button', title: t('side.newBranch'), onClick: () => onOpenModal('branch') }, '+'),
-      ]),
+      actions: h('button', { type: 'button', title: t('side.refresh'), onClick: () => setReloadSeq((n) => n + 1) }, h(RefreshIcon, { size: 15 })),
       children: branchRows,
     }),
     h(Group, {
       key: 'tags', title: t('side.tags'), count: tags.length, open: !closed.has('tags'),
       onToggle: () => toggleClosed('tags'),
-      actions: h('button', { type: 'button', title: t('side.newTag'), onClick: () => onOpenModal('tag') }, '+'),
+      actions: null,
       children: tagRows,
     }),
     h(Group, {
       key: 'stashes', title: t('side.stashes'), count: snapshot.stashCount, open: !closed.has('stashes'),
       onToggle: () => toggleClosed('stashes'),
-      actions: h('button', { type: 'button', title: t('side.newStash'), onClick: () => onOpenModal('stash') }, '+'),
+      onMenu: (x, y) => setMenu({ x, y, kind: 'stash-create' }),
+      actions: null,
       children: stashRows,
     }),
     h(Group, {
@@ -215,7 +253,7 @@ function renderBranchRow(b: GitBranch, current: string | null, selection: Sideba
     key: `b-${b.name}`, className: cls, title: `${b.name}${b.shortHash ? ` (${b.shortHash})` : ''}`,
     onClick: () => cb.onSelect({ view: 'commits', refFilter: active ? null : b.name }),
     onDoubleClick: () => { if (!isCurrent) cb.onCheckout() },
-    onContextMenu: (e: { preventDefault: () => void; clientX: number; clientY: number }) => { e.preventDefault(); cb.onMenu(e.clientX, e.clientY) },
+    onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); cb.onMenu(e.clientX, e.clientY) },
   }, [
     h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(BranchIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
@@ -234,7 +272,7 @@ function renderTagRow(b: GitBranch, isActive: boolean, cb: TagRowCbs): JSX.Eleme
     key: `t-${b.name}`, className: `gp-branch-row${isActive ? ' gp-branch-row--active' : ''}`, title: b.name,
     onClick: () => cb.onSelect({ view: 'commits', refFilter: isActive ? null : b.name }),
     onDoubleClick: () => cb.onCheckout(),
-    onContextMenu: (e: { preventDefault: () => void; clientX: number; clientY: number }) => { e.preventDefault(); cb.onMenu(e.clientX, e.clientY) },
+    onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); cb.onMenu(e.clientX, e.clientY) },
   }, [
     h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(TagIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
@@ -266,11 +304,20 @@ function Group(props: {
   readonly count?: number
   readonly open: boolean
   readonly onToggle: () => void
+  readonly onMenu?: (x: number, y: number) => void
   readonly actions: JSX.Element | null
   readonly children: readonly (JSX.Element | null)[]
 }): JSX.Element {
   return h('div', { className: 'gp-branch-group' }, [
-    h('div', { key: 'h', className: 'gp-branch-group__head', onClick: props.onToggle }, [
+    h('div', {
+      key: 'h', className: 'gp-branch-group__head', onClick: props.onToggle,
+      ...(props.onMenu !== undefined ? {
+        onContextMenu: (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
+          e.preventDefault()
+          props.onMenu!(e.clientX, e.clientY)
+        },
+      } : {}),
+    }, [
       h(ChevronIcon, { key: 'c', size: 11, open: props.open }),
       `${props.title}${props.count !== undefined ? ` (${props.count})` : ''}`,
       props.actions !== null ? h('span', { key: 'a', className: 'gp-side__hact', onClick: (e: { stopPropagation: () => void }) => e.stopPropagation() }, props.actions) : null,

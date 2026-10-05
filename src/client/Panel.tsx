@@ -143,6 +143,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         key: `${sessionId}-commits`, remote, sessionId, refreshKey,
         defaultDiffView: snapshot.defaultDiffView, t,
         externalRef: active.refFilter ?? undefined,
+        headHash: snapshot.head,
         onBranchAt: (hash) => setModal({ kind: 'branch', startPoint: hash }),
         onTagAt: (hash) => setModal({ kind: 'tag', ref: hash }),
         onCheckoutAt: (hash, subject) => setModal({ kind: 'checkout', ref: hash, subject }),
@@ -158,8 +159,8 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
       selection: { view: active.view === 'files' ? 'local' : active.view, refFilter: active.refFilter },
       onSelect: (sel) => setSelection(sel),
       onAction, onOpenModal: (kind, preset) => {
-        if (kind === 'branch') setModal({ kind: 'branch' })
-        else if (kind === 'tag') setModal({ kind: 'tag' })
+        if (kind === 'branch') setModal({ kind: 'branch', ...(preset !== undefined ? { startPoint: preset } : {}) })
+        else if (kind === 'tag') setModal({ kind: 'tag', ...(preset !== undefined ? { ref: preset } : {}) })
         else if (kind === 'merge') setModal({ kind: 'merge', preset })
         else setModal({ kind: 'stash' })
       },

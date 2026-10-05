@@ -440,13 +440,50 @@ export function buildPathD(points: Array<{ x: number; y: number }>): string {
 }
 
 /** Commits reachable from HEAD (for dimming off-branch rows). */
-export function computeCurrentBranchSet(commits: readonly PlusCommit[]): Set<string> {
+export function computeCurrentBranchSet(commits: readonly PlusCommit[], headHash?: string | null): Set<string> {
   const out = new Set<string>()
   const hashIndex = new Map<string, number>()
   for (let i = 0; i < commits.length; i++) hashIndex.set(commits[i]!.hash, i)
+  // Decorated `HEAD -> branch` ref first; detached checkouts carry no head ref,
+  // so fall back to the snapshot's HEAD hash (short or full) explicitly.
   const head = commits.find((c) => c.refs.some((r) => r.type === 'head'))
+    ?? (headHash ? commits.find((c) => c.hash === headHash || c.hash.startsWith(headHash)) : undefined)
   if (!head) return out
   const queue = [head.hash]
+  while (queue.length > 0) {
+    const hash = queue.pop()!
+    if (out.has(hash)) continue
+    out.add(hash)
+    const idx = hashIndex.get(hash)
+    if (idx === undefined) continue
+    for (const p of commits[idx]!.parents) {
+      if (!out.has(p)) queue.push(p)
+    }
+  }
+  return out
+}
+
+/**
+ * Display name of a ref as shown in the sidebar (remote refs keep their
+ * `remote/name` form, head refs resolve to the branch name).
+ */
+export function plusRefName(r: PlusRef): string {
+  if (r.type === 'remote-branch') return r.remote ? `${r.remote}/${r.name}` : r.name
+  return r.name
+}
+
+/**
+ * Ancestors of the commit carrying `ref` (branch / tag / remote display name).
+ * Used to dim everything outside the selected ref while still showing all
+ * commits. Empty when the ref's commit isn't loaded.
+ */
+export function computeRefAncestorSet(commits: readonly PlusCommit[], ref: string): Set<string> {
+  const out = new Set<string>()
+  const root = commits.find((c) => c.refs.some((r) => plusRefName(r) === ref))
+  if (!root) return out
+  const hashIndex = new Map<string, number>()
+  for (let i = 0; i < commits.length; i++) hashIndex.set(commits[i]!.hash, i)
+  const queue = [root.hash]
   while (queue.length > 0) {
     const hash = queue.pop()!
     if (out.has(hash)) continue

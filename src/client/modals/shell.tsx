@@ -10,13 +10,13 @@ export function ModalShell(props: {
 }): JSX.Element {
   if (typeof document === 'undefined') return h('div', {}, props.children)
   return createPortal(
-    h('div', { className: 'gp-modal-backdrop', onClick: (e: { target: unknown; currentTarget: unknown }) => { if (e.target === e.currentTarget) props.onClose() } },
-      h('div', { className: 'gp-modal', role: 'dialog' }, [
-        h('div', { key: 'h', className: 'gp-modal__head' }, [
-          h('span', { key: 't' }, props.title),
-          h('button', { key: 'x', type: 'button', className: 'gp-modal__x', onClick: props.onClose }, '×'),
+    h('div', { className: 'gp-dialog-backdrop', onClick: (e: { target: unknown; currentTarget: unknown }) => { if (e.target === e.currentTarget) props.onClose() } },
+      h('div', { className: 'gp-dialog', role: 'dialog' }, [
+        h('div', { key: 'h', className: 'gp-dialog__head' }, [
+          h('h2', { key: 't', className: 'gp-dialog__title' }, props.title),
+          h('button', { key: 'x', type: 'button', className: 'gp-dialog__x', onClick: props.onClose, 'aria-label': '×' }, '×'),
         ]),
-        h('div', { key: 'b', className: 'gp-modal__body' }, props.children),
+        h('div', { key: 'b', className: 'gp-dialog__body' }, props.children),
       ])),
     document.body,
   )
@@ -36,10 +36,10 @@ export function ModalFooter(props: {
   readonly busy: boolean
   readonly disabled?: boolean
 }): JSX.Element {
-  return h('div', { className: 'gp-modal__foot' }, [
-    h('button', { key: 'c', type: 'button', onClick: props.onClose }, props.t('modal.cancel')),
+  return h('div', { className: 'gp-dialog__foot' }, [
+    h('button', { key: 'c', type: 'button', className: 'gp-btn', onClick: props.onClose }, props.t('modal.cancel')),
     h('button', {
-      key: 'ok', type: 'button', className: 'gp-btn--primary',
+      key: 'ok', type: 'button', className: 'gp-btn gp-btn--primary',
       disabled: props.busy || props.disabled === true, onClick: props.onConfirm,
     }, props.t('modal.confirm')),
   ])

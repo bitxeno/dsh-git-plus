@@ -12,8 +12,9 @@ import type { GraphCommit } from './types'
 import type { GitKey } from './locales'
 import { ChevronIcon, CloseIcon, FileIcon, RefreshIcon } from './icons'
 import {
-  buildFullGraph, buildPathD, computeCurrentBranchSet, GRAPH_PALETTE, GRAPH_ROW_H, GRAPH_X_SCALE,
-  laneX, resolveGraphColor,
+  buildFullGraph, buildPathD, computeCurrentBranchSet, computeRefAncestorSet,
+  GRAPH_PALETTE, GRAPH_ROW_H, GRAPH_X_SCALE,
+  laneX, plusRefName, resolveGraphColor,
   type FullGraphData, type PlusCommit, type PlusRef,
 } from './graph-plus'
 import { buildFileTree } from './file-tree'
@@ -35,6 +36,8 @@ interface OverviewProps {
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
   /** Sidebar-driven ref filter (branch/tag); null = all. */
   readonly externalRef?: string | null
+  /** Snapshot HEAD (short hash); anchors dimming when HEAD is detached. */
+  readonly headHash?: string | null
   /** Commit row actions (context menu + double-click checkout). */
   readonly onBranchAt: (hash: string) => void
   readonly onTagAt: (hash: string) => void
@@ -62,12 +65,18 @@ function useNarrow(el: HTMLElement | null, min: number): boolean {
   return narrow
 }
 
-export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, onBranchAt, onTagAt, onCheckoutAt }: OverviewProps): JSX.Element {
+export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, onBranchAt, onTagAt, onCheckoutAt }: OverviewProps): JSX.Element {
   const [filter, setFilter] = useState<HistoryFilter>({ ref: null, search: '', author: '', since: '' })
-  // Sidebar selection drives the history ref filter (one-way sync).
+  // Sidebar selection anchors dimming (one-way sync). History always loads
+  // everything; rows outside the selected ref's ancestry render dimmed, so a
+  // branch view shows all commits with newer ones grayed out.
+  const [selRef, setSelRef] = useState<string | null>(null)
+  // Jump target: scroll the list to the selected ref's commit once loaded.
+  const [pendingScroll, setPendingScroll] = useState<string | null>(null)
   useEffect(() => {
     if (externalRef === undefined) return
-    setFilter((prev) => (prev.ref === externalRef ? prev : { ...prev, ref: externalRef }))
+    setSelRef(externalRef)
+    setPendingScroll(externalRef)
   }, [externalRef])
   const [searchInput, setSearchInput] = useState('')
   const [searchEl, setSearchEl] = useState<HTMLElement | null>(null)
@@ -107,7 +116,40 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
     () => (searching || plusCommits.length === 0 ? null : buildFullGraph(plusCommits)),
     [searching, plusCommits],
   )
-  const branchSet = useMemo(() => computeCurrentBranchSet(plusCommits), [plusCommits])
+  const branchSet = useMemo(() => computeCurrentBranchSet(plusCommits, headHash), [plusCommits, headHash])
+  // Dim anchor: the selected ref's ancestry when one is picked (HEAD resolves
+  // to the checkout), otherwise the current HEAD ancestry. Falls back to HEAD
+  // when the ref's commit isn't in the loaded page.
+  const anchorSet = useMemo(() => {
+    if (selRef !== null && selRef !== 'HEAD') {
+      const s = computeRefAncestorSet(plusCommits, selRef)
+      if (s.size > 0) return s
+    }
+    return branchSet
+  }, [plusCommits, selRef, branchSet])
+
+  // Scroll to the pending jump target (its commit may arrive on a later page:
+  // keep loading while pages remain, then give up quietly).
+  useEffect(() => {
+    if (pendingScroll === null) return
+    const idx = pendingScroll === 'HEAD'
+      ? (headHash ? plusCommits.findIndex((c) => c.hash === headHash || c.hash.startsWith(headHash)) : -1)
+      : plusCommits.findIndex((c) => c.refs.some((r) => plusRefName(r) === pendingScroll))
+    if (idx >= 0) {
+      const el = listRef.current
+      if (el !== null) el.scrollTop = Math.max(0, idx * GRAPH_ROW_H - el.clientHeight / 2 + GRAPH_ROW_H / 2)
+      const target = commits[idx]
+      if (target !== undefined) {
+        void detail.select(target)
+        setBottomTab('commit')
+      }
+      setPendingScroll(null)
+    } else if (hasMore) {
+      loadMore()
+    } else {
+      setPendingScroll(null)
+    }
+  }, [commits, pendingScroll, headHash, hasMore, loadMore, plusCommits])
   const svgW = useMemo(() => {
     if (full === null) return 0
     let max = 0
@@ -212,7 +254,8 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
             full !== null ? renderGraphSvg(full, svgW) : null,
             ...commits.map((commit, index) => renderPlusRow(commit, {
               selected: selected?.hash === commit.hash,
-              dimmed: !searching && branchSet.size > 0 && !branchSet.has(commit.hash),
+              dimmed: !searching && anchorSet.size > 0 && !anchorSet.has(commit.hash),
+              isHead: headHash != null && headHash !== '' && (commit.hash === headHash || commit.hash.startsWith(headHash)),
               margin: full?.commitLeftMargin[index] ?? 0,
               nodeColor: full !== null && full.dots[index] !== undefined
                 ? resolveGraphColor(GRAPH_PALETTE, full.dots[index]!.color, full.dots[index]!.colorOverride)
@@ -246,16 +289,18 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
       ...(fullscreen ? {} : { style: { height: bottomH } }),
     }, [
       h('div', { key: 'head', className: 'ggp-bottom__head' }, [
-        h('button', {
-          key: 'c', type: 'button',
-          className: `ggp-tab${bottomTab === 'commit' ? ' ggp-tab--active' : ''}`,
-          onClick: () => setBottomTab('commit'),
-        }, t('details.commit')),
-        h('button', {
-          key: 'ch', type: 'button',
-          className: `ggp-tab${bottomTab === 'changes' ? ' ggp-tab--active' : ''}`,
-          onClick: () => setBottomTab('changes'),
-        }, `${t('details.changes')} (${detail.detail?.stats.length ?? 0})`),
+        h('span', { key: 'tabs', className: 'ggp-segtrack' }, [
+          h('button', {
+            key: 'c', type: 'button',
+            className: `ggp-tab${bottomTab === 'commit' ? ' ggp-tab--active' : ''}`,
+            onClick: () => setBottomTab('commit'),
+          }, t('details.commit')),
+          h('button', {
+            key: 'ch', type: 'button',
+            className: `ggp-tab${bottomTab === 'changes' ? ' ggp-tab--active' : ''}`,
+            onClick: () => setBottomTab('changes'),
+          }, `${t('details.changes')} (${detail.detail?.stats.length ?? 0})`),
+        ]),
         h('span', { key: 'sp', className: 'ggp-bottom__spacer' }),
         h('button', {
           key: 'fs', type: 'button', className: 'gp-icon-btn', title: fullscreen ? t('details.restore') : t('details.fullscreen'),
@@ -362,6 +407,8 @@ interface PlusRowCbs {
   selected: boolean
   /** True when the commit is off the current branch (dimmed). */
   dimmed: boolean
+  /** True for the checked-out (HEAD) commit: bold subject. */
+  isHead: boolean
   /** Message start X (unit coords) for this row. */
   margin: number
   /** Resolved rail color of this row's node. */
@@ -440,7 +487,7 @@ function renderPlusRow(commit: GraphCommit, cb: PlusRowCbs): JSX.Element {
     })
   return h('div', {
     key: commit.hash,
-    className: `gp-commit-row ggp-row${cb.selected ? ' gp-commit-row--active' : ''}${cb.dimmed ? ' ggp-row--dim' : ''}`,
+    className: `gp-commit-row ggp-row${cb.selected ? ' gp-commit-row--active' : ''}${cb.dimmed ? ' ggp-row--dim' : ''}${cb.isHead ? ' ggp-row--head' : ''}`,
     style: { height: GRAPH_ROW_H, gridTemplateColumns: GRID_TPL },
     onClick: cb.onSelect,
     onDoubleClick: cb.onCheckout,

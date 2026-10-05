@@ -30,6 +30,7 @@ export function CreateBranchModal(props: {
   }
   return h(ModalShell, {
     title: props.t('modal.createBranch'), onClose: props.onClose, children: [
+      props.startPoint !== undefined && props.startPoint !== '' ? h('div', { key: 'at', className: 'gp-modal__subject' }, `${props.t('modal.createAt')}: ${props.startPoint}`) : null,
       h(Field, {
         key: 'n', label: props.t('modal.name'), children:
           h('input', { type: 'text', value: name, placeholder: 'feature/xxx', onChange: (e: { target: { value: string } }) => setName(e.target.value) }),
