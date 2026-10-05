@@ -235,6 +235,10 @@ export function PushModal(props: SyncModalProps): JSX.Element {
   // (longest prefix wins) so remote names containing '/' stay intact.
   const toRemote = remotes.filter((r) => to.startsWith(`${r}/`)).reduce<string>((best, r) => (r.length > best.length ? r : best), '')
   const toBranch = toRemote !== '' ? to.slice(toRemote.length + 1) : ''
+  // Tracking only makes sense when the push creates the remote branch; an
+  // existing remote branch already has (or doesn't need) an upstream, so the
+  // option is hidden and never sent for it.
+  const targetIsNew = toRemote !== '' && toBranch !== '' && !branchesOf(data, toRemote).includes(toBranch)
   return h(ModalShell, {
     title: props.t('modal.push'), onClose: props.onClose, children: [
       h('div', { key: 'd', className: 'gp-modal__subject' }, props.t('modal.pushDesc')),
@@ -254,10 +258,10 @@ export function PushModal(props: SyncModalProps): JSX.Element {
             onChange: (e: { target: { value: string } }) => setPickedTo(e.target.value),
           }, toOptions.map((o) => h('option', { key: o.value, value: o.value }, o.label))),
       }),
-      h('label', { key: 'up', className: 'gp-check-row' }, [
+      ...(targetIsNew ? [h('label', { key: 'up', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: setUpstream, onChange: () => setSetUpstream((v) => !v) }),
         ` ${props.t('modal.tracking')}`,
-      ]),
+      ])] : []),
       h('label', { key: 'tg', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: tags, onChange: () => setTags((v) => !v) }),
         ` ${props.t('modal.pushTags')}`,
@@ -273,7 +277,7 @@ export function PushModal(props: SyncModalProps): JSX.Element {
         onConfirm: () => void submit({
           kind: 'push', remote: toRemote, branch,
           ...(toBranch !== branch ? { toBranch } : {}),
-          ...(setUpstream ? { setUpstream: true } : {}),
+          ...(targetIsNew && setUpstream ? { setUpstream: true } : {}),
           ...(tags ? { tags: true } : {}),
           ...(force ? { force: true } : {}),
         }),
