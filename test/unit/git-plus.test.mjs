@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -99,5 +99,73 @@ describe('planAction git-plus', () => {
     assert.ok('argv' in planAction({ kind: 'merge-abort' }, false))
     const c = planAction({ kind: 'merge-continue' }, false)
     assert.ok('argv' in c && c.argv.length === 2)
+  })
+})
+
+describe('parseBranches / markRemotePresence', () => {
+  const N = String.fromCharCode(0)
+  const remotes = ['origin']
+  it('parses the upstream short name when present', () => {
+    const out = parseBranches(`main${N}abc1234${N}${N}origin/main\nlocal${N}def5678${N}${N}${N}`)
+    assert.equal(out.length, 2)
+    assert.equal(out[0].upstream, 'origin/main')
+    assert.equal(out[1].upstream, undefined)
+  })
+  it('flags a branch with no remote counterpart as local-only', () => {
+    const local = parseBranches(`main${N}a1${N}${N}origin/main\nsolo${N}b2${N}${N}${N}`)
+    const remote = parseBranches(`origin/main${N}a1${N}${N}${N}`)
+    const marked = markRemotePresence(local, remote, remotes)
+    assert.equal(marked[0].onRemote, true)
+    assert.equal(marked[1].onRemote, false)
+  })
+  it('matches a slash-containing branch name against any remote', () => {
+    const local = parseBranches(`feature/x${N}a1${N}${N}${N}`)
+    const remote = parseBranches(`upstream/feature/x${N}a1${N}${N}${N}`)
+    assert.equal(markRemotePresence(local, remote, ['upstream'])[0].onRemote, true)
+  })
+  it('treats a missing remote-tracking ref for a configured upstream as local-only', () => {
+    const local = parseBranches(`gone${N}a1${N}${N}origin/gone\nother${N}b2${N}${N}origin/other`)
+    const remote = parseBranches(`origin/other${N}b2${N}${N}${N}`)
+    const marked = markRemotePresence(local, remote, remotes)
+    assert.equal(marked[0].onRemote, false)
+    assert.equal(marked[1].onRemote, true)
+  })
+  it('ignores a local-only upstream and falls back to a by-name match', () => {
+    const local = parseBranches(`main${N}a1${N}${N}other\nsolo${N}b2${N}${N}other`)
+    const remote = parseBranches(`origin/main${N}a1${N}${N}${N}`)
+    const marked = markRemotePresence(local, remote, remotes)
+    assert.equal(marked[0].onRemote, true)
+    assert.equal(marked[1].onRemote, false)
+  })
+  it('does not treat a slash-containing local branch upstream as a remote', () => {
+    // `git branch -u feature/base solo` gives upstream "feature/base" — the
+    // first segment is a local branch name, not a configured remote.
+    const local = parseBranches(`solo${N}a1${N}${N}feature/base`)
+    assert.equal(markRemotePresence(local, [], remotes)[0].onRemote, false)
+    const remote = parseBranches(`origin/base${N}b2${N}${N}${N}`)
+    assert.equal(markRemotePresence(local, remote, remotes)[0].onRemote, false)
+  })
+  it('flags every branch when the remote is configured but nothing is fetched', () => {
+    // A remote that was added but never fetched/pushed holds none of our
+    // branches, so each one is local-only — the empty list is a real answer,
+    // not missing evidence.
+    const local = parseBranches(`main${N}a1${N}${N}${N}\nTest${N}b2${N}${N}${N}`)
+    const marked = markRemotePresence(local, [], remotes)
+    assert.equal(marked[0].onRemote, false)
+    assert.equal(marked[1].onRemote, false)
+  })
+  it('marks nothing when the remote listing could not be read', () => {
+    // `null` means the `for-each-ref refs/remotes` command failed: unknown, so
+    // no row may be claimed local-only.
+    const local = parseBranches(`main${N}a1${N}${N}${N}`)
+    assert.equal(markRemotePresence(local, null, remotes)[0].onRemote, undefined)
+    assert.equal(markRemotePresence(local, null, [])[0].onRemote, undefined)
+  })
+  it('leaves the flag undefined when no remote is configured', () => {
+    const local = parseBranches(`main${N}a1${N}${N}${N}`)
+    // Nothing to be absent from, so the whole list stays unmarked.
+    assert.equal(markRemotePresence(local, [], [])[0].onRemote, undefined)
+    const remote = parseBranches(`origin/main${N}a1${N}${N}${N}`)
+    assert.equal(markRemotePresence(local, remote, [])[0].onRemote, undefined)
   })
 })

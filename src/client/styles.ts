@@ -83,6 +83,14 @@ const CSS = `
 .gp-branch-row--active{background:var(--dsw-alias-interactive-bg-hover)}
 .gp-branch-row--current{color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-state-business-primary))}
 .gp-branch-row__track{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary)}
+/* Leading row icon slot (branch/tag/stash rows). */
+.gp-row-icon{display:inline-flex;width:14px;flex:none}
+/* Local-only ref (no remote-tracking counterpart): dim the icon only, the name
+ * stays readable so the row remains easy to scan. Tertiary colour plus a slight
+ * opacity — enough to read as "muted" beside a normal icon while staying
+ * visible. Not --dsw-alias-label-dimmed: that token is only ~1.3:1 on white, so
+ * any extra opacity erased the icon entirely. */
+.gp-row-icon--local-only{color:var(--dsw-alias-label-tertiary);opacity:.55}
 
 /* history */
 .gp-history{display:flex;flex-direction:column;height:100%;min-height:0}

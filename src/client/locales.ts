@@ -156,6 +156,7 @@ export const zh = {
   'side.pop': '应用并删除（Pop）',
   'side.drop': '删除 Stash',
   'side.current': '当前',
+  'side.localOnly': '仅本地存在，远端无此分支',
   // modals
   'modal.createBranch': '新建分支',
   'modal.createTag': '新建标签',
@@ -351,6 +352,7 @@ export const en: Record<GitKey, string> = {
   'side.pop': 'Pop',
   'side.drop': 'Drop stash',
   'side.current': 'current',
+  'side.localOnly': 'Local only — no matching remote branch',
   'modal.createBranch': 'Create branch',
   'modal.createTag': 'Create tag',
   'modal.mergeBranch': 'Merge branch',

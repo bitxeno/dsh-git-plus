@@ -220,6 +220,16 @@ export interface GitBranch {
   readonly shortHash: string | null
   readonly ahead?: number
   readonly behind?: number
+  /** Configured upstream short name (`origin/main`), when one is set. */
+  readonly upstream?: string
+  /**
+   * Whether a matching ref also exists on a remote, judged offline from the
+   * local remote-tracking refs (`refs/remotes/<remote>/<name>`) plus the
+   * configured upstream — no network probe. `undefined` means "not applicable
+   * or unknown" (remote branches, tags, or a repository with no remote), and
+   * the sidebar leaves those rows unmarked.
+   */
+  readonly onRemote?: boolean
 }
 
 export interface WorktreeStats {

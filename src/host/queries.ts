@@ -7,7 +7,7 @@ import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { isSafePath, isSafeRev } from './validate.ts'
-import { parseBranches, parseGraphLog, parseNameStatus, parseStashList, parseTags } from './parser.ts'
+import { parseBranches, parseGraphLog, parseNameStatus, parseStashList, parseTags, markRemotePresence } from './parser.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
 
@@ -526,24 +526,38 @@ async function queryShow(deps: SnapshotDeps, root: string, ref: string): Promise
 }
 
 async function queryBranches(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
-  const fmt = '--format=%(refname:short)%00%(objectname:short)%00%(upstream:track)'
-  const [localRes, remoteRes, currentRes, defaultRes] = await Promise.all([
+  const fmt = '--format=%(refname:short)%00%(objectname:short)%00%(upstream:track)%00%(upstream:short)'
+  const [localRes, remoteRes, currentRes, defaultRes, remotesRes] = await Promise.all([
     runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/heads'], root, 'branches-local', deps.signal),
     runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/remotes'], root, 'branches-remote', deps.signal),
     runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'HEAD'], root, 'branch-current', deps.signal),
     runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], root, 'branch-default', deps.signal),
+    runCommand(deps.run, ['git', 'remote'], root, 'remotes', deps.signal),
   ])
-  const local: GitBranch[] = 'run' in localRes && localRes.run.exitCode === 0 ? parseBranches(localRes.run.stdout) : []
-  const remote: GitBranch[] = 'run' in remoteRes && remoteRes.run.exitCode === 0
+  const localRaw: GitBranch[] = 'run' in localRes && localRes.run.exitCode === 0 ? parseBranches(localRes.run.stdout) : []
+  // `null` (not `[]`) when the listing failed: a broken command is unknown, so
+  // no branch may be marked local-only on the strength of it. An empty *success*
+  // stays `[]` — that is a real "no remote-tracking refs" answer.
+  const remote: GitBranch[] | null = 'run' in remoteRes && remoteRes.run.exitCode === 0
     ? parseBranches(remoteRes.run.stdout).filter((b) => !b.name.endsWith('/HEAD'))
+    : null
+  const remotes = 'run' in remotesRes && remotesRes.run.exitCode === 0
+    ? remotesRes.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
     : []
+  // With a remote configured, a branch that no remote-tracking ref backs is
+  // local-only — including when the repo has never been fetched, where the
+  // remote holds none of our branches. With no remote configured the flag stays
+  // `undefined` (nothing to be absent from).
+  const local = markRemotePresence(localRaw, remote, remotes)
   const current = 'run' in currentRes && currentRes.run.exitCode === 0 ? currentRes.run.stdout.trim() || null : null
   let defaultBranch: string | null = null
   if ('run' in defaultRes && defaultRes.run.exitCode === 0) {
     const raw = defaultRes.run.stdout.trim()
     defaultBranch = raw.replace(/^origin\//, '') || null
   }
-  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote } }
+  // The response keeps an always-array shape; only the marker above cares about
+  // the unknown-vs-empty distinction.
+  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote: remote ?? [] } }
 }
 
 async function queryTags(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {

@@ -119,7 +119,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       title: snapshot.head,
       onClick: () => onSelect({ view: 'commits', refFilter: headActive ? null : 'HEAD' }),
     }, [
-      h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(CommitIcon, { size: 13 })),
+      h('span', { key: 'i', className: 'gp-row-icon' }, h(CommitIcon, { size: 13 })),
       h('span', { key: 'n', className: 'gp-tree-name', style: { fontWeight: 700 } }, 'HEAD'),
       h('span', { key: 'h', className: 'gp-branch-row__track' }, snapshot.head),
     ])]
@@ -128,6 +128,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onSelect,
     onCheckout: () => void run({ kind: 'branch-checkout', name: b.name }),
     onMenu: (x, y) => setMenu({ x, y, kind: 'branch', name: b.name, current: b.name === tree?.current }),
+    t,
   }))]
   const tagRows = tags.map((b) => renderTagRow(b, selection.view === 'commits' && selection.refFilter === b.name, {
     onSelect,
@@ -140,7 +141,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   }))
   const remoteRows = (tree?.remote ?? []).slice(0, 50).map((b) =>
     h('div', { key: `r-${b.name}`, className: 'gp-branch-row', title: b.name }, [
-      h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(BranchIcon, { size: 13 })),
+      h('span', { key: 'i', className: 'gp-row-icon' }, h(BranchIcon, { size: 13 })),
       h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
     ]),
   )
@@ -243,19 +244,29 @@ interface BranchRowCbs {
   readonly onSelect: SidebarProps['onSelect']
   readonly onCheckout: () => void
   readonly onMenu: (x: number, y: number) => void
+  readonly t: SidebarProps['t']
 }
 
 function renderBranchRow(b: GitBranch, current: string | null, selection: SidebarSelection, cb: BranchRowCbs): JSX.Element {
   const isCurrent = b.name === current
   const active = selection.view === 'commits' && selection.refFilter === b.name
   const cls = `gp-branch-row${active ? ' gp-branch-row--active' : ''}${isCurrent ? ' gp-branch-row--current' : ''}`
+  // Offline remote check (host): `false` means no remote-tracking ref backs this
+  // branch. The icon dims and the tooltip explains why; `undefined` (unknown)
+  // renders normally so a remote-less repo never looks uniformly greyed.
+  const localOnly = b.onRemote === false
+  const title = `${b.name}${b.shortHash ? ` (${b.shortHash})` : ''}${localOnly ? ` — ${cb.t('side.localOnly')}` : ''}`
   return h('div', {
-    key: `b-${b.name}`, className: cls, title: `${b.name}${b.shortHash ? ` (${b.shortHash})` : ''}`,
+    key: `b-${b.name}`, className: cls, title,
     onClick: () => cb.onSelect({ view: 'commits', refFilter: active ? null : b.name }),
     onDoubleClick: () => { if (!isCurrent) cb.onCheckout() },
     onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); cb.onMenu(e.clientX, e.clientY) },
   }, [
-    h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(BranchIcon, { size: 13 })),
+    h('span', {
+      key: 'i',
+      className: `gp-row-icon${localOnly ? ' gp-row-icon--local-only' : ''}`,
+      title: localOnly ? cb.t('side.localOnly') : undefined,
+    }, h(BranchIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
     (b.ahead || b.behind) ? h('span', { key: 't', className: 'gp-branch-row__track' }, `${b.ahead ? `↑${b.ahead}` : ''}${b.behind ? `↓${b.behind}` : ''}`) : null,
   ])
@@ -274,7 +285,7 @@ function renderTagRow(b: GitBranch, isActive: boolean, cb: TagRowCbs): JSX.Eleme
     onDoubleClick: () => cb.onCheckout(),
     onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); cb.onMenu(e.clientX, e.clientY) },
   }, [
-    h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(TagIcon, { size: 13 })),
+    h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
   ])
 }
@@ -287,7 +298,7 @@ function renderStashRow(
   cb: { readonly onArm: () => void; readonly onDrop: () => void },
 ): JSX.Element {
   return h('div', { key: `s-${s.index}`, className: 'gp-branch-row', title: s.message }, [
-    h('span', { key: 'i', style: { display: 'inline-flex', width: 14 } }, h(TagIcon, { size: 13 })),
+    h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, `stash@{${s.index}} ${s.message}`),
     h('span', { key: 'ops', className: 'gp-side__ops' }, [
       h('button', { key: 'ap', type: 'button', title: t('side.apply'), onClick: () => void run({ kind: 'stash-apply', index: s.index }) }, '⤓'),

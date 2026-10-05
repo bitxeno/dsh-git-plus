@@ -17,8 +17,26 @@ export declare function parseStatus(stdout: string): GitChange[];
 export declare function parseGraphLog(stdout: string): GraphCommit[];
 /** Parse the `%D` decoration into structured refs. */
 export declare function parseRefs(decoration: string): GitRef[];
-/** Parse `git for-each-ref` local/remote branch lines: `name\0shortHash\0track`. */
+/** Parse `git for-each-ref` branch lines: `name\0shortHash\0track\0upstream`. */
 export declare function parseBranches(stdout: string): GitBranch[];
+/**
+ * Mark which local branches also exist on a remote, judged purely from local
+ * state — no network probe. A branch is remote-backed when its configured
+ * upstream is a remote-tracking ref that still exists, or when some remote
+ * tracks a branch of the same name (`refs/remotes/<remote>/<name>`).
+ *
+ * `remotes` are the configured remote names; `remote` the fetched
+ * remote-tracking refs, or `null` when that listing could not be read (a
+ * failed command is *unknown*, not empty, and must not mark anything).
+ *
+ * With no remote configured nothing is marked (`onRemote` stays `undefined`):
+ * there is no remote for a branch to be absent from, so a purely local repo is
+ * left alone rather than greying its whole list. Once a remote is configured, a
+ * branch with no matching remote-tracking ref is local-only — including the
+ * case of an empty `remote` list, which is exactly a remote that has been
+ * added but never fetched or pushed to (nothing of ours is on it yet).
+ */
+export declare function markRemotePresence(local: readonly GitBranch[], remote: readonly GitBranch[] | null, remotes: readonly string[]): GitBranch[];
 /** Parse `git for-each-ref` tag lines: `name\0shortHash` per line. */
 export declare function parseTags(stdout: string): GitBranch[];
 /**

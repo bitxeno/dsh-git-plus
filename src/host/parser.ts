@@ -112,17 +112,24 @@ export function parseRefs(decoration: string): GitRef[] {
   return refs
 }
 
-/** Parse `git for-each-ref` local/remote branch lines: `name\0shortHash\0track`. */
+/** Parse `git for-each-ref` branch lines: `name\0shortHash\0track\0upstream`. */
 export function parseBranches(stdout: string): GitBranch[] {
   const out: GitBranch[] = []
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue
-    const [name, shortHash = '', track = ''] = line.split('\0')
+    const [name, shortHash = '', track = '', upstream = ''] = line.split('\0')
     if (name === undefined || name === '') continue
-    const branch: { name: string; shortHash: string | null; ahead?: number; behind?: number } = {
+    const branch: {
+      name: string
+      shortHash: string | null
+      ahead?: number
+      behind?: number
+      upstream?: string
+    } = {
       name,
       shortHash: shortHash === '' ? null : shortHash,
     }
+    if (upstream !== '') branch.upstream = upstream
     const ahead = /ahead (\d+)/.exec(track)
     const behind = /behind (\d+)/.exec(track)
     if (ahead) branch.ahead = Number(ahead[1])
@@ -130,6 +137,51 @@ export function parseBranches(stdout: string): GitBranch[] {
     out.push(branch)
   }
   return out
+}
+
+/**
+ * Mark which local branches also exist on a remote, judged purely from local
+ * state — no network probe. A branch is remote-backed when its configured
+ * upstream is a remote-tracking ref that still exists, or when some remote
+ * tracks a branch of the same name (`refs/remotes/<remote>/<name>`).
+ *
+ * `remotes` are the configured remote names; `remote` the fetched
+ * remote-tracking refs, or `null` when that listing could not be read (a
+ * failed command is *unknown*, not empty, and must not mark anything).
+ *
+ * With no remote configured nothing is marked (`onRemote` stays `undefined`):
+ * there is no remote for a branch to be absent from, so a purely local repo is
+ * left alone rather than greying its whole list. Once a remote is configured, a
+ * branch with no matching remote-tracking ref is local-only — including the
+ * case of an empty `remote` list, which is exactly a remote that has been
+ * added but never fetched or pushed to (nothing of ours is on it yet).
+ */
+export function markRemotePresence(
+  local: readonly GitBranch[],
+  remote: readonly GitBranch[] | null,
+  remotes: readonly string[],
+): GitBranch[] {
+  if (remotes.length === 0 || remote === null) return local.map((branch) => ({ ...branch }))
+  const remoteSet = new Set(remotes)
+  const remoteRefs = new Set(remote.map((branch) => branch.name))
+  // Remote branch names with the `<remote>/` prefix stripped, so a local
+  // `feature/x` matches `origin/feature/x` (and any other remote's copy).
+  const remoteNames = new Set<string>()
+  for (const branch of remote) {
+    const slash = branch.name.indexOf('/')
+    if (slash > 0 && slash < branch.name.length - 1) remoteNames.add(branch.name.slice(slash + 1))
+  }
+  return local.map((branch) => {
+    const upstream = branch.upstream ?? ''
+    // Only a `<configured remote>/<name>` upstream is authoritative: the branch
+    // is published exactly when that remote-tracking ref exists. A local
+    // upstream (`git branch -u other`) proves nothing, so fall back to the
+    // by-name match.
+    const slash = upstream.indexOf('/')
+    const isRemoteUpstream = slash > 0 && remoteSet.has(upstream.slice(0, slash))
+    const onRemote = isRemoteUpstream ? remoteRefs.has(upstream) : remoteNames.has(branch.name)
+    return { ...branch, onRemote }
+  })
 }
 
 /** Parse `git for-each-ref` tag lines: `name\0shortHash` per line. */

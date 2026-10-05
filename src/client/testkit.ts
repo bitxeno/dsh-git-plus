@@ -3,7 +3,7 @@
  * can import them from a built ESM bundle (lib/testkit.mjs) without a
  * TypeScript loader. Not part of the plugin runtime.
  */
-export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, sumNumstat, parseRefs } from '../host/parser.ts'
+export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, markRemotePresence, sumNumstat, parseRefs } from '../host/parser.ts'
 export { isSafePath, isSafeRev, isSafeBranchName } from '../host/validate.ts'
 export { planAction, pickDefaultRemote, resolvePushRemote } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
