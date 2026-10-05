@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Local reference copies (design/material source only, not part of the repo)
+.reference/
+
+# lib/ is committed on purpose: `dsh plugin add` installs the committed
+# tree without running a build. Only the test-only bundles stay untracked,
+# because `npm run test:unit` rebuilds them first.
+lib/testkit.mjs
+lib/hookkit.mjs
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Test / coverage
+coverage/
+.nyc_output/

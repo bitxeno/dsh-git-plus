@@ -1,0 +1,636 @@
+/**
+ * Read-only query endpoint: history / diff / image-diff / show / branches /
+ * tags / authors / last-commit-message / worktree-stats / stash-list /
+ * conflicts / operation-state.
+ */
+import { join, sep } from 'node:path'
+import type { SnapshotDeps, GitPanelConfig } from './core.ts'
+import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
+import { isSafePath, isSafeRev } from './validate.ts'
+import { parseBranches, parseGraphLog, parseNameStatus, parseStashList, parseTags } from './parser.ts'
+import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
+import { imageMimeFor } from './types.ts'
+
+const GRAPH_FORMAT = '--format=%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s%x1e'
+
+/** 7+ hex chars → treat search as a commit hash prefix. */
+function isHexLike(text: string): boolean {
+  return /^[0-9a-fA-F]{7,40}$/.test(text.trim())
+}
+
+export async function runQuery(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  request: GitQueryRequest,
+): Promise<GitQueryResponse> {
+  const q = request.query
+  // The file browser works outside a git repository too: resolve a plain
+  // directory root (work-tree top when in a repo, else the session cwd) so
+  // dir-list / file-content still function; every git-backed query keeps
+  // requiring a real work tree.
+  if (q.kind === 'dir-list' || q.kind === 'file-content') {
+    const browse = await resolveBrowseRoot(deps, request.sessionId)
+    if (!browse.ok) return { ok: false, error: browse.error }
+    try {
+      return q.kind === 'dir-list'
+        ? await queryDirList(deps, browse.root, q, browse.isGitRepo)
+        : await queryFileContent(deps, config, browse.root, q)
+    } catch (error) {
+      return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : String(error) } }
+    }
+  }
+
+  const workspace = await resolveWorkspace(deps, request.sessionId)
+  if (!workspace.ok) return { ok: false, error: mapWorkspaceFailure(workspace.failure) }
+  const root = workspace.root
+
+  try {
+    switch (q.kind) {
+      case 'history': return await queryHistory(deps, root, q)
+      case 'diff': return await queryDiff(deps, root, q)
+      case 'file-lines': return await queryFileLines(deps, root, q)
+      case 'image-diff': return await queryImageDiff(deps, config, root, q)
+      case 'show': return await queryShow(deps, root, q.ref)
+      case 'branches': return await queryBranches(deps, root)
+      case 'tags': return await queryTags(deps, root)
+      case 'authors': return await queryAuthors(deps, root)
+      case 'last-commit-message': return await queryLastCommitMessage(deps, root)
+      case 'worktree-stats': return await queryWorktreeStats(deps, config, request.sessionId)
+      case 'stash-list': return await queryStashList(deps, root)
+      case 'conflicts': return await queryConflicts(deps, root)
+      case 'operation-state': return await queryOperationState(deps, root)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { ok: false, error: { code: 'git-error', message } }
+  }
+}
+
+async function queryHistory(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'history' }>,
+): Promise<GitQueryResponse> {
+  // Clamp paging: the host is the trust boundary; a huge limit walks all of
+  // history into the output cap, a non-number is a git fatal.
+  const limit = Number.isFinite(q.limit) ? Math.min(500, Math.max(1, Math.trunc(q.limit))) : 100
+  const skip = Number.isFinite(q.skip) ? Math.max(0, Math.trunc(q.skip)) : 0
+  const args = ['git', 'log', GRAPH_FORMAT, `--max-count=${limit}`, `--skip=${skip}`]
+  const search = q.search?.trim() ?? ''
+  const hexJump = search !== '' && isHexLike(search)
+  const countArgs = ['git', 'rev-list', '--count']
+  // Untrusted ref/author filters must never reach an option position: reject a
+  // dash-prefixed / metacharacter ref (the `--output=` file-write vector) and
+  // pass the ref after `--end-of-options`, which git treats as a bare operand.
+  if (!hexJump) {
+    // The same filter set feeds both the page log and the total-count walk.
+    const filters: string[] = []
+    if (search !== '') filters.push('-i', '-E', `--grep=${search}`)
+    if (q.author !== undefined && q.author !== '') filters.push(`--author=${q.author}`)
+    if (q.since !== undefined && q.since !== '') filters.push(`--since=${q.since}`)
+    if (q.ref !== undefined && q.ref !== '') {
+      if (!isSafeRev(q.ref)) return { ok: false, error: { code: 'invalid-name', message: `unsafe ref: ${q.ref}` } }
+      filters.push('--end-of-options', q.ref)
+    } else {
+      filters.push('--all')
+    }
+    args.push(...filters)
+    countArgs.push(...filters)
+  } else {
+    // Hash jump: `search` is already constrained to [0-9a-f]{7,40} by isHexLike.
+    args.push('--end-of-options', search)
+  }
+  // Run the page log and the total count concurrently (the count is a second
+  // full history walk; serializing it roughly doubled the first-page latency).
+  const [res, countRes] = await Promise.all([
+    runCommand(deps.run, args, root, 'history', deps.signal),
+    hexJump ? Promise.resolve(null) : runCommand(deps.run, countArgs, root, 'history-count', deps.signal),
+  ])
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (res.run.exitCode !== 0) {
+    // Only a hash-jump miss or a genuine unknown/empty ref is an empty page;
+    // every other non-zero exit surfaces as an error instead of a silent
+    // "no commits" that would also mask malformed input.
+    const stderr = res.run.stderr.trim()
+    if (hexJump || /unknown revision|bad revision|does not have any commits|ambiguous argument/i.test(stderr)) {
+      return { ok: true, value: { kind: 'history', commits: [], total: 0 } }
+    }
+    return { ok: false, error: { code: 'git-error', message: stderr || `git exited ${res.run.exitCode}` } }
+  }
+  const commits: GraphCommit[] = parseGraphLog(res.run.stdout)
+  // Hash-jump ignores ref/author/since filters and starts the walk at the
+  // commit itself, so a total is meaningless; -1 (the initial value) tells the
+  // client to page by "did the last page fill" instead of a fixed count.
+  let total = -1
+  if (!hexJump && countRes !== null && 'run' in countRes && countRes.run.exitCode === 0) {
+    const n = Number(countRes.run.stdout.trim())
+    if (Number.isFinite(n)) total = n
+  }
+  return { ok: true, value: { kind: 'history', commits, total } }
+}
+
+async function queryDiff(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'diff' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafePath(q.path)) return { ok: false, error: { code: 'invalid-path', message: q.path } }
+  // Context lines around each change; a large value effectively shows the whole
+  // file (expand-all). Clamp to a sane ceiling to bound output.
+  const ctx = q.context !== undefined && Number.isFinite(q.context) ? Math.max(0, Math.min(100000, Math.floor(q.context))) : 3
+  const unified = `-U${ctx}`
+  let args: string[]
+  if (q.base === 'staged') {
+    args = ['git', 'diff', unified, '--cached', '--', q.path]
+  } else if (q.base === 'commit') {
+    if (!isSafeRev(q.commit)) return { ok: false, error: { code: 'invalid-name', message: `unsafe commit: ${q.commit}` } }
+    args = ['git', 'show', unified, '--end-of-options', q.commit, '--', q.path]
+  } else {
+    // worktree: unstaged diff; for untracked files use --no-index against /dev/null.
+    args = ['git', 'diff', unified, '--', q.path]
+  }
+  const res = await runCommand(deps.run, args, root, 'diff', deps.signal)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  let text = res.run.stdout
+  // A truly untracked file produces no `git diff` output; synthesize one with
+  // --no-index. Gate on the file being untracked (ls-files --error-unmatch
+  // fails for it) so a clean *tracked* path isn't rendered as an all-new file.
+  if (q.base === 'worktree' && text.trim() === '') {
+    const tracked = await runCommand(deps.run, ['git', 'ls-files', '--error-unmatch', '--', q.path], root, 'diff-tracked-probe', deps.signal)
+    const isUntracked = !('run' in tracked) || tracked.run.exitCode !== 0
+    if (isUntracked) {
+      const noIndex = await runCommand(deps.run, ['git', 'diff', unified, '--no-index', '--', '/dev/null', q.path], root, 'diff-untracked', deps.signal)
+      if ('run' in noIndex) text = noIndex.run.stdout
+    }
+  }
+  return { ok: true, value: { kind: 'diff', path: q.path, text } }
+}
+
+/**
+ * A slice of a file's post-change content for on-demand context expansion. The
+ * source version mirrors the diff's new side: worktree/staged read the working
+ * file (both diff against it on the right), commit reads `<commit>:<path>`. The
+ * whole file is materialized then sliced in-process — expansion targets small
+ * ranges and git offers no cheap "print lines m..n of a blob" primitive.
+ */
+async function queryFileLines(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'file-lines' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafePath(q.path)) return { ok: false, error: { code: 'invalid-path', message: q.path } }
+  const start = Number.isFinite(q.start) ? Math.max(1, Math.floor(q.start)) : 1
+  const end = Number.isFinite(q.end) ? Math.max(start, Math.floor(q.end)) : start
+  let args: string[]
+  if (q.base === 'commit') {
+    if (!isSafeRev(q.commit)) return { ok: false, error: { code: 'invalid-name', message: `unsafe commit: ${q.commit}` } }
+    args = ['git', 'show', '--end-of-options', `${q.commit}:${q.path}`]
+  } else {
+    // worktree + staged both expand against the working-tree file (the diff's
+    // right side); --end-of-options keeps a `-`-leading path out of options.
+    args = ['git', 'show', `--end-of-options`, `:${q.path}`]
+    // ":<path>" is the index copy; for an unstaged worktree diff the working
+    // file is the truthful right side, so prefer reading it directly.
+    if (q.base === 'worktree') args = ['git', 'cat-file', '-p', `:${q.path}`]
+  }
+  const res = await runCommand(deps.run, args, root, 'file-lines', deps.signal)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (res.run.exitCode !== 0) {
+    // Untracked/new files have no committed/index blob: read the worktree file.
+    if (q.base === 'worktree') {
+      const wt = await readWorktreeText(deps, root, q.path)
+      if (wt !== null) return sliceLines(q.path, wt, start, end)
+    }
+    return { ok: false, error: { code: 'git-error', message: res.run.stderr.trim() || 'no such blob' } }
+  }
+  return sliceLines(q.path, res.run.stdout, start, end)
+}
+
+/** Read a worktree file as text when it is inside the root (symlink-guarded). */
+async function readWorktreeText(deps: SnapshotDeps, root: string, path: string): Promise<string | null> {
+  try {
+    const file = join(root, path)
+    const real = await deps.fs.realpath(file)
+    const rootReal = await deps.fs.realpath(root)
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) return null
+    const buf = await deps.fs.readFile(file)
+    return buf.toString('utf8')
+  } catch {
+    return null
+  }
+}
+
+/** Slice `content` to 1-based lines start..end, flagging when end hit EOF. */
+function sliceLines(path: string, content: string, start: number, end: number): GitQueryResponse {
+  // Split on \n and drop a single trailing empty element (final newline) so the
+  // line count matches the file's real line count.
+  const all = content.split('\n')
+  if (all.length > 0 && all[all.length - 1] === '') all.pop()
+  const from = Math.min(start, all.length + 1)
+  const to = Math.min(end, all.length)
+  const lines = from <= to ? all.slice(from - 1, to) : []
+  const eof = to >= all.length
+  return { ok: true, value: { kind: 'file-lines', path, start: from, lines, eof } }
+}
+
+// ── image diff ─────────────────────────────────────────────────────────────
+
+/** One image side: base64 payload, an over-cap flag, or absent (no such side). */
+type ImageSide = { readonly data: string } | { readonly tooLarge: true } | undefined
+
+/**
+ * Old/new image sides for a binary image, mirroring the text diff's sources:
+ * worktree rows compare index vs working file, staged rows HEAD vs index,
+ * commit rows parent vs commit — so each pane matches the code pane's meaning.
+ * Each side is capped at `config.maxBytes` (profile-configurable): as base64
+ * inside one JSON envelope, two capped sides bound the RPC payload.
+ */
+async function queryImageDiff(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'image-diff' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafePath(q.path)) return { ok: false, error: { code: 'invalid-path', message: q.path } }
+  if (q.base === 'commit' && !isSafeRev(q.commit)) return { ok: false, error: { code: 'invalid-name', message: `unsafe commit: ${q.commit}` } }
+  const mime = imageMimeFor(q.path)
+  if (mime === null) return { ok: true, value: { kind: 'image-diff', path: q.path, mime } }
+
+  const oldSpec = q.base === 'staged' ? `HEAD:${q.path}` : q.base === 'commit' ? `${q.commit}^1:${q.path}` : `:${q.path}`
+  const newSpec = q.base === 'staged' ? `:${q.path}` : q.base === 'commit' ? `${q.commit}:${q.path}` : null
+  const [oldOid, newOid] = await Promise.all([
+    resolveOid(deps, root, oldSpec),
+    newSpec === null ? Promise.resolve(undefined) : resolveOid(deps, root, newSpec),
+  ])
+
+  const cap = config.maxBytes
+  const gitDir = oldOid !== undefined || newOid !== undefined ? await absoluteGitDir(deps, root) : ''
+  const [oldSide, newSide] = await Promise.all([
+    oldOid === undefined ? Promise.resolve(undefined) : blobSide(deps, gitDir, oldOid, cap),
+    newOid !== undefined
+      ? blobSide(deps, gitDir, newOid, cap)
+      : q.base === 'worktree' ? worktreeSide(deps, root, q.path, cap) : Promise.resolve(undefined),
+  ])
+  const sides = [oldSide, newSide]
+  if (sides.some((s) => s !== undefined && 'tooLarge' in s)) {
+    return { ok: true, value: { kind: 'image-diff', path: q.path, mime, tooLarge: true } }
+  }
+  const old64 = sides[0] !== undefined && !('tooLarge' in sides[0]) ? sides[0].data : undefined
+  const new64 = sides[1] !== undefined && !('tooLarge' in sides[1]) ? sides[1].data : undefined
+  return {
+    ok: true,
+    value: {
+      kind: 'image-diff', path: q.path, mime,
+      ...(old64 !== undefined ? { old: `data:${mime};base64,${old64}` } : {}),
+      ...(new64 !== undefined ? { new: `data:${mime};base64,${new64}` } : {}),
+    },
+  }
+}
+
+/** Resolve `<rev>:<path>` to a full object id; absent spec → undefined. */
+async function resolveOid(deps: SnapshotDeps, root: string, spec: string): Promise<string | undefined> {
+  const res = await runCommand(deps.run, ['git', 'rev-parse', '--verify', '--quiet', spec], root, 'image-oid', deps.signal)
+  if (!('run' in res) || res.run.exitCode !== 0) return undefined
+  const oid = res.run.stdout.trim()
+  return /^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(oid) ? oid : undefined
+}
+
+async function absoluteGitDir(deps: SnapshotDeps, root: string): Promise<string> {
+  const res = await runCommand(deps.run, ['git', 'rev-parse', '--absolute-git-dir'], root, 'git-dir', deps.signal)
+  if (!('run' in res) || res.run.exitCode !== 0) throw new Error('git dir unavailable')
+  return res.run.stdout.trim()
+}
+
+/**
+ * Raw blob bytes: `unpack-file` writes the object to a temp file (stdout is a
+ * lossy utf8 decode and cannot carry binary), created in the git dir — which
+ * must be the cwd so the temp file never shows up as an untracked worktree
+ * entry. The printed name is charset-checked before it is joined and read.
+ */
+async function blobSide(deps: SnapshotDeps, gitDir: string, oid: string, cap: number): Promise<ImageSide> {
+  const sizeRes = await runCommand(deps.run, ['git', 'cat-file', '-s', oid], gitDir, 'image-size', deps.signal)
+  if (!('run' in sizeRes) || sizeRes.run.exitCode !== 0) return undefined
+  const size = Number(sizeRes.run.stdout.trim())
+  if (!Number.isFinite(size)) return undefined
+  if (size > cap) return { tooLarge: true }
+  const nameRes = await runCommand(deps.run, ['git', 'unpack-file', oid], gitDir, 'image-unpack', deps.signal)
+  if (!('run' in nameRes) || nameRes.run.exitCode !== 0) return undefined
+  const name = nameRes.run.stdout.trim()
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return undefined
+  const file = join(gitDir, name)
+  try {
+    const buf = await deps.fs.readFile(file)
+    if (buf.length > cap) return { tooLarge: true }
+    return { data: buf.toString('base64') }
+  } catch {
+    return undefined
+  } finally {
+    await deps.fs.remove(file).catch(() => {})
+  }
+}
+
+/** The working-tree file (absent when deleted). A symlink whose realpath
+ * escapes the repository root is refused, so an untrusted clone cannot point
+ * `evil.png → ~/.ssh/id_rsa` and have its bytes base64'd into the image pane. */
+async function worktreeSide(deps: SnapshotDeps, root: string, path: string, cap: number): Promise<ImageSide> {
+  try {
+    const file = join(root, path)
+    const real = await deps.fs.realpath(file)
+    const rootReal = await deps.fs.realpath(root)
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) return undefined
+    const info = await deps.fs.stat(file)
+    if (info.size > cap) return { tooLarge: true }
+    const buf = await deps.fs.readFile(file)
+    if (buf.length > cap) return { tooLarge: true }
+    return { data: buf.toString('base64') }
+  } catch {
+    return undefined
+  }
+}
+
+// ── file browser ─────────────────────────────────────────────────────────
+
+/** Max entries returned for one directory listing (bounds RPC + render). */
+const DIR_ENTRY_CAP = 2000
+
+/**
+ * List one working-tree directory, one level down. `.git` is skipped; the path
+ * is validated (`isSafePath`) and its realpath is confirmed inside the root so
+ * a symlinked subdirectory cannot escape. Entries are sorted dirs-first then by
+ * name and capped at DIR_ENTRY_CAP.
+ */
+async function queryDirList(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'dir-list' }>,
+  isGitRepo: boolean,
+): Promise<GitQueryResponse> {
+  const rel = q.path
+  if ((rel !== '' && !isSafePath(rel)) || hasGitSegment(rel)) return { ok: false, error: { code: 'invalid-path', message: rel } }
+  const dir = rel === '' ? root : join(root, rel)
+  const inside = await isInsideRoot(deps, root, dir, true)
+  if (!inside) return { ok: false, error: { code: 'invalid-path', message: rel } }
+  let raw: ReadonlyArray<{ name: string; isDirectory: boolean }>
+  try {
+    raw = await deps.fs.readdir(dir)
+  } catch (error) {
+    return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : 'readdir failed' } }
+  }
+  const filtered = raw.filter((e) => e.name !== '.git')
+  filtered.sort((a, b) => (a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name)))
+  const truncated = filtered.length > DIR_ENTRY_CAP
+  const slice = truncated ? filtered.slice(0, DIR_ENTRY_CAP) : filtered
+  const ignored = isGitRepo ? await ignoredEntries(deps, root, rel, slice.map((e) => e.name)) : new Set<string>()
+  const entries: DirEntry[] = await Promise.all(slice.map(async (e) => {
+    const ignoreFlag = ignored.has(e.name) ? { ignored: true } : {}
+    if (e.isDirectory) return { name: e.name, dir: true, ...ignoreFlag }
+    let size: number | undefined
+    try { size = (await deps.fs.stat(join(dir, e.name))).size } catch { size = undefined }
+    return { name: e.name, dir: false, ...(size !== undefined ? { size } : {}), ...ignoreFlag }
+  }))
+  const path = rel === '' ? '' : rel.replace(/\/+$/, '')
+  return { ok: true, value: { kind: 'dir-list', path, entries, truncated } }
+}
+
+/** Check only the visible directory page; Git handles nested and negated rules. */
+async function ignoredEntries(deps: SnapshotDeps, root: string, parent: string, names: readonly string[]): Promise<Set<string>> {
+  const ignored = new Set<string>()
+  const paths = names.map((name) => parent === '' ? name : `${parent}/${name}`)
+  // Bound each argv batch by both count and bytes (especially for deep paths).
+  for (let index = 0; index < paths.length;) {
+    const batch: string[] = []
+    let bytes = 0
+    while (index < paths.length && batch.length < 128) {
+      const candidate = paths[index]
+      const size = Buffer.byteLength(candidate) + 1
+      if (batch.length > 0 && bytes + size > 32 * 1024) break
+      batch.push(candidate)
+      bytes += size
+      index++
+    }
+    const result = await runCommand(deps.run, ['git', 'check-ignore', '-z', '--stdin'], root, 'dir-ignore', deps.signal, `${batch.join('\0')}\0`)
+    if ('failure' in result || result.run.timedOut || result.run.cancelled || result.run.stdoutLossy || ![0, 1].includes(result.run.exitCode ?? -1)) continue
+    const matches = new Set(result.run.stdout.split('\0'))
+    for (const path of batch) if (matches.has(path)) ignored.add(parent === '' ? path : path.slice(parent.length + 1))
+  }
+  return ignored
+}
+
+/**
+ * Read one working-tree file for preview. Images (by extension) return a base64
+ * data URL; otherwise a UTF-8/binary probe decides between a text body and a
+ * bare binary marker. Over the byte cap → `tooLarge`. Path is validated and
+ * confirmed inside the root (symlink-guarded) before any read.
+ */
+async function queryFileContent(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'file-content' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafePath(q.path) || hasGitSegment(q.path)) return { ok: false, error: { code: 'invalid-path', message: q.path } }
+  const file = join(root, q.path)
+  const inside = await isInsideRoot(deps, root, file, true)
+  if (!inside) return { ok: false, error: { code: 'invalid-path', message: q.path } }
+  const cap = config.maxBytes
+  let info: { size: number }
+  try {
+    info = await deps.fs.stat(file)
+  } catch (error) {
+    return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : 'stat failed' } }
+  }
+  const mime = imageMimeFor(q.path)
+  // Same over-cap response whether the size trips at stat or after read (the
+  // post-read length guards a grow-during-read race).
+  const tooLarge: GitQueryResponse = { ok: true, value: { kind: 'file-content', path: q.path, variant: mime !== null ? 'image' : 'text', tooLarge: true } }
+  if (info.size > cap) return tooLarge
+  let buf: Buffer
+  try {
+    buf = await deps.fs.readFile(file)
+  } catch (error) {
+    return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : 'read failed' } }
+  }
+  if (buf.length > cap) return tooLarge
+  if (mime !== null) {
+    return { ok: true, value: { kind: 'file-content', path: q.path, variant: 'image', dataUrl: `data:${mime};base64,${buf.toString('base64')}` } }
+  }
+  if (isBinaryBuffer(buf)) return { ok: true, value: { kind: 'file-content', path: q.path, variant: 'binary' } }
+  const content = buf.toString('utf8')
+  const lines = content === '' ? 0 : content.split('\n').length - (content.endsWith('\n') ? 1 : 0)
+  return { ok: true, value: { kind: 'file-content', path: q.path, variant: 'text', content, lines } }
+}
+
+/** Do not expose Git metadata even through an explicit RPC path. */
+function hasGitSegment(path: string): boolean {
+  return path.split(/[\\/]/).includes('.git')
+}
+
+/** True when a path resolves inside the browse root, outside its .git tree. */
+async function isInsideRoot(deps: SnapshotDeps, root: string, path: string, hideGit = false): Promise<boolean> {
+  try {
+    const real = await deps.fs.realpath(path)
+    const rootReal = await deps.fs.realpath(root)
+    if (real !== rootReal && !real.startsWith(rootReal + sep)) return false
+    return !hideGit || !hasGitSegment(real.slice(rootReal.length + 1))
+  } catch {
+    return false
+  }
+}
+
+/** Heuristic binary probe: a NUL byte in the first 8KB marks non-text. */
+function isBinaryBuffer(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8192)
+  for (let i = 0; i < n; i++) if (buf[i] === 0) return true
+  return false
+}
+
+async function queryShow(deps: SnapshotDeps, root: string, ref: string): Promise<GitQueryResponse> {
+  if (!isSafeRev(ref)) return { ok: false, error: { code: 'invalid-name', message: `unsafe ref: ${ref}` } }
+  // hash / short / subject / author / date / body — body last so a bounded
+  // split folds any stray 0x1f (crafted subject/metadata) back into the body,
+  // keeping the five leading fields aligned.
+  const metaFormat = '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%b'
+  const [metaRes, statRes] = await Promise.all([
+    runCommand(deps.run, ['git', 'show', '-s', metaFormat, '--end-of-options', ref], root, 'show-meta', deps.signal),
+    runCommand(deps.run, ['git', 'show', '--name-status', '-z', '--format=', '--end-of-options', ref], root, 'show-stat', deps.signal),
+  ])
+  if (!('run' in metaRes)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (metaRes.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (metaRes.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (metaRes.run.exitCode !== 0) {
+    return { ok: false, error: { code: 'git-error', message: metaRes.run.stderr.trim() || 'unknown ref' } }
+  }
+  const parts = metaRes.run.stdout.split('\x1f')
+  let commit: GitCommit | null = null
+  let body = ''
+  if (parts.length >= 5 && parts[0]) {
+    commit = {
+      hash: parts[0]!,
+      shortHash: parts[1] ?? '',
+      subject: parts[2] ?? '',
+      author: parts[3] ?? '',
+      dateIso: parts[4] ?? '',
+    }
+    body = parts.slice(5).join('\x1f').trim()
+  }
+  const stats: GitFileStat[] = 'run' in statRes && statRes.run.exitCode === 0
+    ? parseNameStatus(statRes.run.stdout)
+    : []
+  return { ok: true, value: { kind: 'show', ref, commit, body, stats } }
+}
+
+async function queryBranches(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const fmt = '--format=%(refname:short)%00%(objectname:short)%00%(upstream:track)'
+  const [localRes, remoteRes, currentRes, defaultRes] = await Promise.all([
+    runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/heads'], root, 'branches-local', deps.signal),
+    runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/remotes'], root, 'branches-remote', deps.signal),
+    runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'HEAD'], root, 'branch-current', deps.signal),
+    runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], root, 'branch-default', deps.signal),
+  ])
+  const local: GitBranch[] = 'run' in localRes && localRes.run.exitCode === 0 ? parseBranches(localRes.run.stdout) : []
+  const remote: GitBranch[] = 'run' in remoteRes && remoteRes.run.exitCode === 0
+    ? parseBranches(remoteRes.run.stdout).filter((b) => !b.name.endsWith('/HEAD'))
+    : []
+  const current = 'run' in currentRes && currentRes.run.exitCode === 0 ? currentRes.run.stdout.trim() || null : null
+  let defaultBranch: string | null = null
+  if ('run' in defaultRes && defaultRes.run.exitCode === 0) {
+    const raw = defaultRes.run.stdout.trim()
+    defaultBranch = raw.replace(/^origin\//, '') || null
+  }
+  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote } }
+}
+
+async function queryTags(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const res = await runCommand(deps.run, ['git', 'for-each-ref', '--sort=-creatordate', '--format=%(refname:short)%00%(objectname:short)', 'refs/tags'], root, 'tags', deps.signal)
+  const tags: GitBranch[] = 'run' in res && res.run.exitCode === 0 ? parseTags(res.run.stdout) : []
+  return { ok: true, value: { kind: 'tags', tags } }
+}
+
+async function queryAuthors(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const res = await runCommand(deps.run, ['git', 'log', '--all', '--format=%an', '--max-count=2000'], root, 'authors', deps.signal)
+  const authors = 'run' in res && res.run.exitCode === 0
+    ? [...new Set(res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== ''))].sort((a, b) => a.localeCompare(b))
+    : []
+  return { ok: true, value: { kind: 'authors', authors } }
+}
+
+async function queryLastCommitMessage(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const res = await runCommand(deps.run, ['git', 'log', '-1', '--format=%B'], root, 'last-message', deps.signal)
+  const message = 'run' in res && res.run.exitCode === 0 ? res.run.stdout.replace(/\n+$/, '') : ''
+  return { ok: true, value: { kind: 'last-commit-message', message } }
+}
+
+async function queryWorktreeStats(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  sessionId: string,
+): Promise<GitQueryResponse> {
+  // The worktree stats now live on the snapshot (single source of git spawns);
+  // this endpoint just reads them so a bare stats request stays cheap.
+  const snapshot = await snapshotForSession(deps, config, sessionId)
+  if (!snapshot.ok) return { ok: false, error: { code: 'git-error', message: 'snapshot failed' } }
+  return { ok: true, value: { kind: 'worktree-stats', stats: snapshot.value.stats } }
+}
+
+async function queryStashList(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const res = await runCommand(
+    deps.run,
+    ['git', 'stash', 'list', '--format=%gd%00%gs%00%aI%00%P%00%H'],
+    root, 'stash-list', deps.signal,
+  )
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (res.run.exitCode !== 0) return { ok: true, value: { kind: 'stash-list', stashes: [] } }
+  return { ok: true, value: { kind: 'stash-list', stashes: parseStashList(res.run.stdout) } }
+}
+
+async function queryConflicts(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const res = await runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'conflicts', deps.signal)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  const files = res.run.exitCode === 0
+    ? res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
+    : []
+  return { ok: true, value: { kind: 'conflicts', files } }
+}
+
+async function queryOperationState(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const operation = await detectOperation(deps, root)
+  return { ok: true, value: { kind: 'operation-state', operation } }
+}
+
+/** Resolve the git dir (handles worktree .git files) then probe MERGE/REBASE state. */
+export async function detectOperation(deps: SnapshotDeps, root: string): Promise<import('./types.ts').GitOperationState | null> {
+  const dirRes = await runCommand(deps.run, ['git', 'rev-parse', '--absolute-git-dir'], root, 'git-dir', deps.signal)
+  if (!('run' in dirRes) || dirRes.run.exitCode !== 0) return null
+  const gitDir = dirRes.run.stdout.trim()
+  if (!gitDir) return null
+  const exists = async (rel: string): Promise<boolean> => {
+    try {
+      const st = await deps.fs.stat(join(gitDir.startsWith('/') ? gitDir : join(root, gitDir), rel))
+      return st.size >= 0
+    } catch {
+      return false
+    }
+  }
+  const conflictRes = await runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'op-conflicts', deps.signal)
+  const rawFiles = 'run' in conflictRes && conflictRes.run.exitCode === 0
+    ? conflictRes.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
+    : []
+  // Resolved = file no longer unmerged but still part of the operation set.
+  // V1: everything U is unresolved; after `add` it disappears from U.
+  const files = rawFiles.map((path) => ({ path, resolved: false }))
+  if (await exists('MERGE_HEAD')) return { kind: 'merge', files }
+  if (await exists('CHERRY_PICK_HEAD')) return { kind: 'cherry-pick', files }
+  if (await exists('REVERT_HEAD')) return { kind: 'revert', files }
+  if ((await exists('rebase-merge')) || (await exists('rebase-apply'))) return { kind: 'rebase', files }
+  return files.length > 0 ? { kind: 'merge', files } : null
+}

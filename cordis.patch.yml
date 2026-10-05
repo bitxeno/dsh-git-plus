@@ -1,0 +1,10 @@
+# dsh-git-plus bundle patch: insert the host half as one cordis row.
+- insert:
+    - id: git-plus
+      name: 'dsh-git-plus'
+      config:
+        timeoutMs: 8000
+        maxBytes: 4194304
+        maxChanges: 1000
+        refreshIntervalMs: 30000
+        defaultDiffView: unified
