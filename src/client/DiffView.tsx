@@ -3,8 +3,8 @@
 import { createElement as h, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import {
-  buildSideBySide, flattenToUnified, isBinaryDiff,
-  isImagePath, isSvgPath, spliceGap, summarize, GAP_STEP, type GapInfo, type SideRow,
+  buildSideBySide, diffLineCount, flattenToUnified, isBinaryDiff,
+  isImagePath, isLargeDiff, isSvgPath, spliceGap, summarize, GAP_STEP, type GapInfo, type SideRow,
 } from './diff'
 import { languageForPath, useCodeHighlighter, type CodeHighlighter, type HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
 import { splitHighlightSpans } from './code-spans'
@@ -57,7 +57,16 @@ type ImageState =
   | { readonly kind: 'ready'; readonly res: ImageDiffValue }
 
 export const DiffView = memo(function DiffView({ text, mode, path, remote, sessionId, imageSpec, t }: DiffViewProps): JSX.Element {
-  const baseRows = useMemo(() => buildSideBySide(text), [text])
+  // A very large text diff is not parsed or rendered until the user asks for
+  // it: building tens of thousands of rows and DOM nodes synchronously on
+  // click is what froze the panel. The gate sits before buildSideBySide so a
+  // deferred diff costs one linear scan and nothing else.
+  const large = useMemo(() => isLargeDiff(text), [text])
+  const [loadLarge, setLoadLarge] = useState(false)
+  useEffect(() => { setLoadLarge(false) }, [text, path])
+  const deferLarge = large && !loadLarge
+
+  const baseRows = useMemo(() => (deferLarge ? [] : buildSideBySide(text)), [text, deferLarge])
   const binary = isBinaryDiff(text)
 
   const hl = useCodeHighlighter(path === undefined ? undefined : languageForPath(path))
@@ -158,6 +167,20 @@ export const DiffView = memo(function DiffView({ text, mode, path, remote, sessi
 
   // Raster binary with no usable rendered comparison.
   if (binary && !svg) return h('div', { className: 'gp-empty' }, t('diff.binary'))
+
+  // Large text diff: render the opt-in placeholder instead of the rows. The
+  // Find bar and gap expansion are intentionally unavailable until loaded —
+  // both need the parsed rows this branch avoids building.
+  if (deferLarge) {
+    return h('div', { className: 'gp-diff__large' }, [
+      h('div', { key: 'msg', className: 'gp-diff__large-msg' }, t('diff.largeDeferred')),
+      h('div', { key: 'hint', className: 'gp-diff__large-hint' }, t('diff.largeDeferredHint', { n: diffLineCount(text) })),
+      h('button', {
+        key: 'load', type: 'button', className: 'gp-btn gp-btn--primary gp-diff__large-btn',
+        onClick: () => setLoadLarge(true),
+      }, t('diff.load')),
+    ])
+  }
 
   // Text diff (regular files, and an SVG in 'source' mode).
   const body = ((): JSX.Element => {

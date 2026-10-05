@@ -251,6 +251,12 @@ const CSS = `
 .gp-diff__scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;font-family:var(--dsw-font-mono,monospace);font-size:12px}
 /* DiffView wraps its Find bar + body so the bar can stick to the scroll top. */
 .gp-diff__wrap{display:flex;flex-direction:column;min-height:100%}
+/* Large-diff opt-in: the pane shows this instead of the rows until the user
+ * clicks Load, so a huge diff cannot freeze the panel on open. */
+.gp-diff__large{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;height:100%;min-height:160px;padding:24px;text-align:center;font-family:var(--dsw-font-family,inherit);font-size:13px;color:var(--dsw-alias-label-secondary)}
+.gp-diff__large-msg{font-weight:500;color:var(--dsw-alias-label-primary)}
+.gp-diff__large-hint{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.gp-diff__large-btn{margin-top:2px}
 .gp-diff__wrap .gp-find{position:sticky;top:0;z-index:2}
 .gp-diff__side{display:grid;grid-template-columns:38px 1fr 38px 1fr}
 /* unified (inline) layout: old|new line-number gutters + a sign column + one

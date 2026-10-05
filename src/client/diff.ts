@@ -46,6 +46,49 @@ export function isBinaryDiff(unified: string): boolean {
   return /^Binary files .* differ$/m.test(unified) || /^GIT binary patch$/m.test(unified)
 }
 
+/**
+ * Line count past which a text diff is not rendered until the user opts in.
+ * Opening a huge diff (lockfiles, generated files, mass deletions) would build
+ * tens of thousands of nodes synchronously and freeze the panel, so the view
+ * shows a placeholder first. Split mode renders roughly twice the cells of
+ * unified, which is why the budget is conservative.
+ */
+export const LARGE_DIFF_LINES = 3000
+/** Byte count past which a text diff is treated as large even when its line
+ * count stays low (e.g. a minified single-line bundle). */
+export const LARGE_DIFF_BYTES = 512 * 1024
+
+/**
+ * Number of lines in a unified diff (cheap count for the deferred-view
+ * placeholder). A trailing newline does not start another line.
+ */
+export function diffLineCount(unified: string): number {
+  if (unified === '') return 0
+  let lines = 0
+  for (let i = 0; i < unified.length; i++) {
+    if (unified.charCodeAt(i) === 10) lines++
+  }
+  return unified.charCodeAt(unified.length - 1) === 10 ? lines : lines + 1
+}
+
+/**
+ * True when a unified diff is big enough to defer rendering. Counted on the
+ * raw text so the decision is cheap and needs no parsing; binary/image markers
+ * are excluded because those views never build a line grid.
+ */
+export function isLargeDiff(unified: string): boolean {
+  if (isBinaryDiff(unified)) return false
+  if (unified.length > LARGE_DIFF_BYTES) return true
+  // Count newlines directly instead of splitting: a split would allocate one
+  // string per line just to measure a diff we may not render at all.
+  let lines = 0
+  for (let i = 0; i < unified.length; i++) {
+    if (unified.charCodeAt(i) === 10) lines++
+    if (lines > LARGE_DIFF_LINES) return true
+  }
+  return false
+}
+
 /** True when the path is one of the image types image-diff serves. */
 export function isImagePath(path: string): boolean {
   return imageMimeFor(path) !== null
