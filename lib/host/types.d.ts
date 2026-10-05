@@ -133,6 +133,10 @@ export type GitAction = {
     readonly name: string;
     readonly ref?: string;
     readonly message?: string;
+    /** Push the new tag to a remote after creating it. */
+    readonly push?: boolean;
+    /** Host-resolved push target (origin, else the first remote). */
+    readonly pushRemote?: string;
 } | {
     readonly kind: 'delete-tag';
     readonly name: string;
@@ -170,7 +174,7 @@ export type GitAction = {
     readonly branch?: string;
     readonly newBranch?: string;
 };
-export type GitErrorCode = 'cwd-unavailable' | 'not-a-git-repo' | 'git-unavailable' | 'invalid-path' | 'invalid-name' | 'git-error' | 'timeout' | 'cancelled' | 'empty-message' | 'local-changes-block' | 'conflicted' | 'not-implemented';
+export type GitErrorCode = 'cwd-unavailable' | 'not-a-git-repo' | 'git-unavailable' | 'invalid-path' | 'invalid-name' | 'git-error' | 'timeout' | 'cancelled' | 'empty-message' | 'local-changes-block' | 'conflicted' | 'no-remote' | 'not-implemented';
 export type GitActionResult = {
     readonly ok: true;
     readonly snapshot: GitSnapshot;

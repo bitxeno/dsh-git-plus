@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, planAction } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -57,6 +57,37 @@ describe('planAction git-plus', () => {
     assert.ok('argv' in l)
     const a = planAction({ kind: 'create-tag', name: 'v1.0.0', message: 'rel' }, false)
     assert.ok('argv' in a && a.argv[0].includes('-a'))
+  })
+  it('plans create-tag with a push step to the resolved remote', () => {
+    const r = planAction({ kind: 'create-tag', name: 'v2.0.0', message: 'rel', ref: 'abc123', push: true, pushRemote: 'origin' }, false)
+    assert.ok('argv' in r && r.argv.length === 2)
+    assert.deepEqual(r.argv[1], ['git', 'push', '--end-of-options', 'origin', 'refs/tags/v2.0.0'])
+    const lightweight = planAction({ kind: 'create-tag', name: 'v2.0.1', push: true, pushRemote: 'upstream' }, false)
+    assert.ok('argv' in lightweight && lightweight.argv[0].includes('v2.0.1') && !lightweight.argv[0].includes('-a'))
+  })
+  it('rejects create-tag push without a remote or with an unsafe one', () => {
+    const none = planAction({ kind: 'create-tag', name: 'v1.0.0', push: true }, false)
+    assert.ok('error' in none && none.error === 'no-remote')
+    const bad = planAction({ kind: 'create-tag', name: 'v1.0.0', push: true, pushRemote: '-evil' }, false)
+    assert.ok('error' in bad && bad.error === 'invalid-name')
+  })
+  it('picks origin as the default push remote, else the first', () => {
+    assert.equal(pickDefaultRemote(['origin', 'mirror']), 'origin')
+    assert.equal(pickDefaultRemote(['upstream', 'origin']), 'origin')
+    assert.equal(pickDefaultRemote(['upstream', 'fork']), 'upstream')
+    assert.equal(pickDefaultRemote([]), null)
+  })
+  it('resolves the push remote from `git remote` output', async () => {
+    const deps = {
+      run: { run: async (argv) => ({ exitCode: 0, stdout: argv.includes('remote') ? 'upstream\norigin\n' : '', stderr: '', timedOut: false, cancelled: false, stdoutLossy: false }) },
+      fs: { realpath: async (p) => p, stat: async () => ({ mtimeMs: 0, size: 0 }), readFile: async () => Buffer.from(''), readdir: async () => [], remove: async () => {} },
+      sessions: { liveCwd: () => '/x', persistedMeta: async () => undefined },
+    }
+    assert.equal(await resolvePushRemote(deps, '/x'), 'origin')
+    const none = { ...deps, run: { run: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false, cancelled: false, stdoutLossy: false }) } }
+    assert.equal(await resolvePushRemote(none, '/x'), null)
+    const failed = { ...deps, run: { run: async () => ({ exitCode: 128, stdout: '', stderr: 'fatal', timedOut: false, cancelled: false, stdoutLossy: false }) } }
+    assert.equal(await resolvePushRemote(failed, '/x'), null)
   })
   it('stubs rebase/worktree as not-implemented (V2)', () => {
     const r = planAction({ kind: 'rebase', onto: 'main' }, false)

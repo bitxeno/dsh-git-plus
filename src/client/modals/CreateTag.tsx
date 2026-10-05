@@ -11,19 +11,25 @@ export function CreateTagModal(props: {
   readonly initialRef?: string
 }): JSX.Element {
   const [name, setName] = useState('')
-  const [ref, setRef] = useState(props.initialRef ?? '')
   const [message, setMessage] = useState('')
-  const [annotated, setAnnotated] = useState(false)
+  const [push, setPush] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The target ref is not editable: the preset from the entry point (commit
+  // row / branch / tag) is always used, defaulting to HEAD when absent. The
+  // read-only line below is the only place it shows.
+  const ref = (props.initialRef ?? '').trim()
+  const target = ref === '' ? 'HEAD' : ref
   const submit = async (): Promise<void> => {
     if (!name.trim()) return
     setBusy(true)
     setError(null)
     const res = await props.onSubmit({
       kind: 'create-tag', name: name.trim(),
-      ...(ref.trim() ? { ref: ref.trim() } : {}),
-      ...(annotated && message.trim() ? { message: message.trim() } : {}),
+      ...(ref !== '' ? { ref } : {}),
+      // A non-empty message makes the tag annotated (-a -m); empty stays lightweight.
+      ...(message.trim() !== '' ? { message: message.trim() } : {}),
+      ...(push ? { push: true } : {}),
     })
     setBusy(false)
     if (res.ok) props.onClose()
@@ -31,23 +37,19 @@ export function CreateTagModal(props: {
   }
   return h(ModalShell, {
     title: props.t('modal.createTag'), onClose: props.onClose, children: [
-      props.initialRef !== undefined && props.initialRef !== '' ? h('div', { key: 'at', className: 'gp-modal__subject' }, `${props.t('modal.createAt')}: ${props.initialRef}`) : null,
+      h('div', { key: 'at', className: 'gp-modal__subject' }, `${props.t('modal.createAt')}: ${target}`),
       h(Field, {
         key: 'n', label: props.t('modal.name'), children:
           h('input', { type: 'text', value: name, placeholder: 'v0.1.0', onChange: (e: { target: { value: string } }) => setName(e.target.value) }),
       }),
       h(Field, {
-        key: 'r', label: props.t('modal.ref'), children:
-          h('input', { type: 'text', value: ref, onChange: (e: { target: { value: string } }) => setRef(e.target.value) }),
-      }),
-      h('label', { key: 'a', className: 'gp-check' }, [
-        h('input', { key: 'i', type: 'checkbox', checked: annotated, onChange: () => setAnnotated((v) => !v) }),
-        ` ${props.t('modal.annotated')}`,
-      ]),
-      annotated ? h(Field, {
         key: 'm', label: props.t('modal.message'), children:
           h('input', { type: 'text', value: message, onChange: (e: { target: { value: string } }) => setMessage(e.target.value) }),
-      }) : null,
+      }),
+      h('label', { key: 'p', className: 'gp-check' }, [
+        h('input', { key: 'i', type: 'checkbox', checked: push, onChange: () => setPush((v) => !v) }),
+        ` ${props.t('modal.pushToRemote')}`,
+      ]),
       error ? h('div', { key: 'e', className: 'gp-modal__err' }, error) : null,
       h(ModalFooter, { key: 'f', t: props.t, onClose: props.onClose, onConfirm: () => void submit(), busy, disabled: !name.trim() }),
     ],

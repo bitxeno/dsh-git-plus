@@ -121,7 +121,16 @@ export type GitAction =
   | { readonly kind: 'fetch' }
   | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean }
   | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean }
-  | { readonly kind: 'create-tag'; readonly name: string; readonly ref?: string; readonly message?: string }
+  | {
+    readonly kind: 'create-tag'
+    readonly name: string
+    readonly ref?: string
+    readonly message?: string
+    /** Push the new tag to a remote after creating it. */
+    readonly push?: boolean
+    /** Host-resolved push target (origin, else the first remote). */
+    readonly pushRemote?: string
+  }
   | { readonly kind: 'delete-tag'; readonly name: string }
   | {
     readonly kind: 'merge'
@@ -152,6 +161,7 @@ export type GitErrorCode =
   | 'empty-message'
   | 'local-changes-block'
   | 'conflicted'
+  | 'no-remote'
   | 'not-implemented'
 
 export type GitActionResult =

@@ -233,6 +233,7 @@ function errorText(code: string, message: string | undefined, t: (key: GitKey) =
     case 'not-a-git-repo': return t('error.notARepo')
     case 'cwd-unavailable': return t('error.noCwd')
     case 'local-changes-block': return t('error.localChangesBlock')
+    case 'no-remote': return t('error.noRemote')
     default: return message ?? t('error.generic')
   }
 }

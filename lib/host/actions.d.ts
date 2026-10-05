@@ -11,5 +11,10 @@ type PlanResult = CommandPlan | {
 };
 /** Build the git command sequence for an action. */
 export declare function planAction(action: GitAction, unborn: boolean): PlanResult;
+/** Default push target: `origin` when present, else the first configured
+ *  remote; null when the repository has no remotes. */
+export declare function pickDefaultRemote(names: readonly string[]): string | null;
+/** Read the configured remote names and pick the default push target. */
+export declare function resolvePushRemote(deps: SnapshotDeps, root: string): Promise<string | null>;
 /** Execute a management action, returning the fresh snapshot on success. */
 export declare function runAction(deps: SnapshotDeps, config: GitPanelConfig, request: GitActionRequest): Promise<GitActionResult>;

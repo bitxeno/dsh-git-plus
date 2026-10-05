@@ -98,7 +98,14 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
         args.push(action.name)
       }
       if (action.ref) args.push(action.ref)
-      return { argv: [args] }
+      const argv: string[][] = [args]
+      if (action.push === true) {
+        const remote = action.pushRemote ?? ''
+        if (remote === '') return { error: 'no-remote', message: 'no push remote resolved' }
+        if (!isSafeRev(remote)) return { error: 'invalid-name', message: `unsafe push remote: ${remote}` }
+        argv.push(['git', 'push', '--end-of-options', remote, `refs/tags/${action.name}`])
+      }
+      return { argv }
     }
     case 'delete-tag': {
       if (!isSafeRev(action.name)) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
@@ -141,6 +148,20 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
   }
 }
 
+/** Default push target: `origin` when present, else the first configured
+ *  remote; null when the repository has no remotes. */
+export function pickDefaultRemote(names: readonly string[]): string | null {
+  if (names.length === 0) return null
+  return names.includes('origin') ? 'origin' : names[0] ?? null
+}
+
+/** Read the configured remote names and pick the default push target. */
+export async function resolvePushRemote(deps: SnapshotDeps, root: string): Promise<string | null> {
+  const res = await runCommand(deps.run, ['git', 'remote'], root, 'remotes', deps.signal)
+  if (!('run' in res) || res.run.exitCode !== 0) return null
+  return pickDefaultRemote(res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== ''))
+}
+
 /** Execute a management action, returning the fresh snapshot on success. */
 export async function runAction(
   deps: SnapshotDeps,
@@ -167,7 +188,18 @@ export async function runAction(
     }
   }
 
-  const plan = planAction(request.action, unborn)
+  // Push-after-create needs the remote resolved at execution time (origin,
+  // else the first configured remote); the client never names a remote.
+  let action = request.action
+  if (action.kind === 'create-tag' && action.push === true && action.pushRemote === undefined) {
+    const remote = await resolvePushRemote(deps, root)
+    if (remote === null) {
+      return { ok: false, error: { code: 'no-remote', message: 'no git remote configured' } }
+    }
+    action = { ...action, pushRemote: remote }
+  }
+
+  const plan = planAction(action, unborn)
   if ('error' in plan) return { ok: false, error: { code: plan.error, ...(plan.message ? { message: plan.message } : {}) } }
 
   let lastOutput = ''
@@ -184,6 +216,11 @@ export async function runAction(
     lastOutput = outcome.run.stdout || outcome.run.stderr
     if (outcome.run.exitCode !== 0) {
       const stderr = outcome.run.stderr
+      // create-tag + push: step 0 (the tag) already succeeded, so name the
+      // partial state — retrying the whole action would hit "already exists".
+      if (action.kind === 'create-tag' && action.push === true && step > 0) {
+        return { ok: false, error: { code: 'git-error', message: `tag created locally, but push failed: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
+      }
       // Merge conflicts: surface as a typed conflicted result with the file
       // list so the client can jump straight to the conflict banner.
       if (request.action.kind === 'merge' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
