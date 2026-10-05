@@ -44,9 +44,9 @@ export function CreateTagModal(props: {
       }),
       h(Field, {
         key: 'm', label: props.t('modal.message'), children:
-          h('input', { type: 'text', value: message, onChange: (e: { target: { value: string } }) => setMessage(e.target.value) }),
+          h('input', { type: 'text', value: message, placeholder: props.t('modal.messageOptional'), onChange: (e: { target: { value: string } }) => setMessage(e.target.value) }),
       }),
-      h('label', { key: 'p', className: 'gp-check' }, [
+      h('label', { key: 'p', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: push, onChange: () => setPush((v) => !v) }),
         ` ${props.t('modal.pushToRemote')}`,
       ]),

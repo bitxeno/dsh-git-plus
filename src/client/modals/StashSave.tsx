@@ -33,11 +33,11 @@ export function StashSaveModal(props: {
         key: 'm', label: props.t('modal.message'), children:
           h('input', { type: 'text', value: message, onChange: (e: { target: { value: string } }) => setMessage(e.target.value) }),
       }),
-      h('label', { key: 'u', className: 'gp-check' }, [
+      h('label', { key: 'u', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: untracked, onChange: () => setUntracked((v) => !v) }),
         ` ${props.t('modal.includeUntracked')}`,
       ]),
-      h('label', { key: 'k', className: 'gp-check' }, [
+      h('label', { key: 'k', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: keepIndex, onChange: () => setKeepIndex((v) => !v) }),
         ` ${props.t('modal.keepIndex')}`,
       ]),

@@ -29,7 +29,7 @@ export function MergeBranchModal(props: {
     else setError(res.error ?? '')
   }
   const radio = (key: typeof mode, label: string): JSX.Element =>
-    h('label', { key, className: 'gp-check' }, [
+    h('label', { key, className: 'gp-check-row' }, [
       h('input', { key: 'i', type: 'radio', name: 'merge-mode', checked: mode === key, onChange: () => setMode(key) }),
       ` ${label}`,
     ])

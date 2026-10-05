@@ -32,6 +32,7 @@
   ],
   "scripts": {
     "build": "node build.mjs",
+    "deploy:local": "npm run build && rsync -a --delete --delete-excluded --exclude 'testkit.mjs' --exclude 'hookkit.mjs' lib/ ~/.dsh/profiles/web/node_modules/dsh-git-plus/lib/ && echo 'Deployed to ~/.dsh/profiles/web/node_modules/dsh-git-plus/lib — refresh the GUI to load the new client.js (restart dsh web for host-half changes)'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "node build.mjs && node --test --test-force-exit test/unit/*.test.mjs",
     "test": "npm run test:unit",

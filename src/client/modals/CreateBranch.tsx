@@ -39,7 +39,7 @@ export function CreateBranchModal(props: {
         key: 's', label: props.t('modal.startPoint'), children:
           h('input', { type: 'text', value: start, onChange: (e: { target: { value: string } }) => setStart(e.target.value) }),
       }),
-      h('label', { key: 'c', className: 'gp-check' }, [
+      h('label', { key: 'c', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: checkout, onChange: () => setCheckout((v) => !v) }),
         ' checkout (-b)',
       ]),

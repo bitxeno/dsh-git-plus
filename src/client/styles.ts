@@ -424,8 +424,11 @@ const CSS = `
 .gp-field input[type=text]{box-sizing:border-box;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}
 .gp-field input[type=text]::placeholder{color:var(--dsw-alias-label-dimmed)}
 .gp-field input[type=text]:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
-.gp-check{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
-.gp-check input{width:16px;height:16px;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}
+/* Checkbox row inside a form dialog. Deliberately NOT the bare-input class:
+ * that one sets width/height 14px, and sharing it made the label a 14px-wide
+ * flex box that wrapped its text one character per line. */
+.gp-check-row{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
+.gp-check-row input{flex:none;width:16px;height:16px;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}
 .gp-radio{display:flex;flex-direction:column;gap:8px}
 .gp-btn--primary{background:var(--dsw-alias-state-business-primary,#5ac8fa);color:#fff;border-radius:8px;padding:6px 14px}
 .gp-rail{display:flex;flex-direction:column;overflow:auto}
