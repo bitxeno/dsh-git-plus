@@ -24,7 +24,8 @@ import { statusChar, statusClass } from './status'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
 import { ContextMenu, copyText } from './ContextMenu'
 import { Tip } from './Tip'
-import { authorAvatarUrl, isGitHubRemote } from './avatar'
+import { authorAvatarUrl, isGitHubRemote, parseGitHubRepo } from './avatar'
+import { useGitHubAvatarMap } from './github-avatars'
 import { useBranchTree, useCommitDetail, useHistory, type HistoryFilter } from './overview-hooks'
 import { segButtons } from './seg'
 import type { DiffViewMode } from './types'
@@ -82,17 +83,21 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
     setPendingScroll(externalRef)
   }, [externalRef])
   const [searchInput, setSearchInput] = useState('')
-  // GitHub remote gate for author avatars (Gravatar needs nothing else).
-  const [isGitHub, setIsGitHub] = useState(false)
+  // GitHub remote gate + repo identity for author avatars.
+  const [ghRepo, setGhRepo] = useState<{ owner: string; repo: string } | null>(null)
   useEffect(() => {
     let alive = true
     void remote.query({ sessionId, query: { kind: 'remote-url' } }).then((res) => {
       if (!alive) return
       const v = queryAs(res, 'remote-url')
-      setIsGitHub(v !== null && isGitHubRemote(v.url))
+      const url = v?.url ?? ''
+      setGhRepo(isGitHubRemote(url) ? parseGitHubRepo(url) : null)
     })
     return () => { alive = false }
   }, [remote, sessionId, refreshKey])
+  const isGitHub = ghRepo !== null
+  // Exact GitHub avatars by SHA (host gh auth, then cached API page); rule-based fallback.
+  const ghAvatars = useGitHubAvatarMap(ghRepo, remote, sessionId)
   const [searchEl, setSearchEl] = useState<HTMLElement | null>(null)
   const searchNarrow = useNarrow(searchEl, SEARCH_HINT_MIN_W)
   const { authors, reload: reloadTree } = useBranchTree(remote, sessionId, refreshKey)
@@ -279,7 +284,7 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
                 : '#888',
               localOnly: full?.dots[index]?.localOnly ?? false,
               remoteOnly: full?.dots[index]?.remoteTip ?? false,
-              avatarUrl: authorAvatarUrl(commit.authorEmail, 36, isGitHub),
+              avatarUrl: ghAvatars.get(commit.hash) ?? authorAvatarUrl(commit.authorEmail, 36, isGitHub),
               onSelect: () => { void detail.select(commit); setBottomTab('commit') },
               onMenu: (x, y) => setRowMenu({ x, y, hash: commit.hash, shortHash: commit.shortHash, subject: commit.subject }),
               onCheckout: () => onCheckoutAt(commit.hash, commit.subject),
@@ -336,7 +341,7 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
         bottomTab === 'commit' && selected !== null
           ? renderCommitMeta(selected, detail.detail?.body ?? null, {
             onParent: jumpToParent,
-            avatarUrl: authorAvatarUrl(selected.authorEmail, 36, isGitHub),
+            avatarUrl: ghAvatars.get(selected.hash) ?? authorAvatarUrl(selected.authorEmail, 36, isGitHub),
             t,
           })
           : detail.detail === null

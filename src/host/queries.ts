@@ -8,6 +8,7 @@ import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { isSafePath, isSafeRev } from './validate.ts'
 import { parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence } from './parser.ts'
+import { extractRepoAvatars, getCachedAvatars, isGhPathName, setCachedAvatars } from './github.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
 
@@ -61,6 +62,7 @@ export async function runQuery(
       case 'operation-state': return await queryOperationState(deps, root)
       case 'remote-url': return await queryRemoteUrl(deps, root)
       case 'quick-status': return await queryQuickStatus(deps, root)
+      case 'github-avatars': return await queryGithubAvatars(deps, root, q)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -633,6 +635,44 @@ async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQuer
   if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
   const url = res.run.exitCode === 0 ? res.run.stdout.trim() : ''
   return { ok: true, value: { kind: 'remote-url', url } }
+}
+
+/**
+ * Commit avatars via the local `gh` CLI (private repos included). Best
+ * effort with a 10-minute host cache: missing `gh`, no login, rate limits
+ * and offline all yield an empty list and callers fall back.
+ */
+async function queryGithubAvatars(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'github-avatars' }>,
+): Promise<GitQueryResponse> {
+  if (!isGhPathName(q.owner) || !isGhPathName(q.repo)) {
+    return { ok: false, error: { code: 'invalid-name', message: 'unsafe owner/repo' } }
+  }
+  const cached = getCachedAvatars(q.owner, q.repo)
+  if (cached !== null) return { ok: true, value: { kind: 'github-avatars', avatars: cached } }
+  const res = await runCommand(
+    deps.run,
+    // NOTE: no `-f` fields here — they flip gh to POST, which this endpoint
+    // rejects; the query string keeps it a GET.
+    ['gh', 'api', `repos/${q.owner}/${q.repo}/commits?per_page=100`],
+    root, 'github-avatars', deps.signal, undefined, 30_000,
+  )
+  if (!('run' in res)) return { ok: true, value: { kind: 'github-avatars', avatars: [] } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut || res.run.exitCode !== 0) {
+    return { ok: true, value: { kind: 'github-avatars', avatars: [] } }
+  }
+  let payload: unknown = null
+  try {
+    payload = JSON.parse(res.run.stdout)
+  } catch {
+    return { ok: true, value: { kind: 'github-avatars', avatars: [] } }
+  }
+  const avatars = extractRepoAvatars(payload)
+  setCachedAvatars(q.owner, q.repo, avatars)
+  return { ok: true, value: { kind: 'github-avatars', avatars } }
 }
 
 /**

@@ -14,6 +14,7 @@ export type { GitSnapshot, GitSnapshotResult, GitSnapshotRequest, GitFailure, Gi
 export { normalizeConfig, DEFAULT_CONFIG, snapshotForSession, resolveWorkspace } from './core.ts';
 export { createGitRunner } from './git.ts';
 export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, sumNumstat } from './parser.ts';
+export { extractRepoAvatars, isGhPathName } from './github.ts';
 export { isSafePath, planAction, runAction, isNetworkCommand } from './actions.ts';
 export { runQuery, detectOperation } from './queries.ts';
 export { readVersionInfo, checkLatestVersion, compareVersions, parseRepository } from './version.ts';

@@ -99,3 +99,18 @@ export function authorAvatarUrl(email: string, size: number, isGitHub: boolean):
 export function isGitHubRemote(url: string): boolean {
   return /github\.com[:/]/i.test(url.trim())
 }
+
+export interface GitHubRepo {
+  readonly owner: string
+  readonly repo: string
+}
+
+/**
+ * `owner/repo` parsed from a github.com remote URL (https, ssh, with or
+ * without `.git`). Null for anything else.
+ */
+export function parseGitHubRepo(url: string): GitHubRepo | null {
+  const m = /github\.com[/:]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(url.trim())
+  if (!m) return null
+  return { owner: m[1]!, repo: m[2]! }
+}

@@ -296,6 +296,10 @@ export type GitQuery = {
     readonly kind: 'remote-url';
 } | {
     readonly kind: 'quick-status';
+} | {
+    readonly kind: 'github-avatars';
+    readonly owner: string;
+    readonly repo: string;
 };
 export interface DirEntry {
     readonly name: string;
@@ -404,6 +408,12 @@ export type GitQueryResult = {
 } | {
     readonly kind: 'remote-url';
     readonly url: string;
+} | {
+    readonly kind: 'github-avatars';
+    readonly avatars: readonly {
+        readonly sha: string;
+        readonly url: string;
+    }[];
 } | {
     readonly kind: 'quick-status';
     /** Current branch; null when detached. */

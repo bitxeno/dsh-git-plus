@@ -238,6 +238,7 @@ export type GitQuery =
   | { readonly kind: 'operation-state' }
   | { readonly kind: 'remote-url' }
   | { readonly kind: 'quick-status' }
+  | { readonly kind: 'github-avatars'; readonly owner: string; readonly repo: string }
 
 export interface DirEntry {
   readonly name: string
@@ -317,6 +318,10 @@ export type GitQueryResult =
   | { readonly kind: 'conflicts'; readonly files: readonly string[] }
   | { readonly kind: 'operation-state'; readonly operation: GitOperationState | null }
   | { readonly kind: 'remote-url'; readonly url: string }
+  | {
+    readonly kind: 'github-avatars'
+    readonly avatars: readonly { readonly sha: string; readonly url: string }[]
+  }
   | {
     readonly kind: 'quick-status'
     /** Current branch; null when detached. */
