@@ -87,7 +87,12 @@ Releases: push a `chore(release): bump version to X.Y.Z` commit — the workflow
 npm publishing is gated on the `NPM_TOKEN` repository secret — without it the workflow ships GitHub releases only:
 
 1. Create the token: npmjs.com → profile avatar → Access Tokens → Generate New Token. Use **Automation** (classic token) or a **Granular Access Token** scoped to the `dsh-git-plus` package with read and write access. Copy it immediately — it is shown only once.
-2. Add it to the repo: GitHub repo → Settings → Secrets and variables → Actions → New repository secret, name `NPM_TOKEN`, value = the token from step 1.
+2. Add it to the repo with the GitHub CLI:
+   ```sh
+   gh secret set NPM_TOKEN --repo bitxeno/dsh-git-plus
+   # paste the token when prompted, then verify:
+   gh secret list --repo bitxeno/dsh-git-plus
+   ```
 3. Ship any release afterwards — the workflow publishes automatically (`latest` dist-tag for stable versions, `next` for prereleases containing `-`).
 
 Notes: the npm package name must be unclaimed (the first publish creates it; validate beforehand with `npm publish --dry-run`). To rotate, regenerate the token on npmjs.com and update the secret value.
