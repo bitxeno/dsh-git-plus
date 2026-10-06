@@ -502,6 +502,11 @@ const CSS = `
 .ggp-subject{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .ggp-localdot{width:5px;height:5px;border-radius:50%;flex:none;background:#4da6ff;opacity:.85}
 .ggp-remotedot{width:5px;height:5px;border-radius:50%;flex:none;background:var(--dsw-alias-label-tertiary,#888);opacity:.85}
+/* author cell: avatar + truncated name */
+.gp-commit-author{display:flex;align-items:center;gap:6px;min-width:0}
+.ggp-avatar{width:18px;height:18px;border-radius:50%;flex:none}
+.ggp-commit__author{align-items:center}
+.ggp-authorname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* ref badges with colored accent bar (git-graph-plus) */
 .gp-ref-badge{position:relative;display:inline-flex;align-items:center;gap:3px;padding:1px 7px 1px calc(var(--badge-bar-width,4px) + 6px);border-radius:4px;font-size:11px;line-height:17px;white-space:nowrap;flex:none;overflow:hidden;background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2)}
 .gp-ref-badge::before{content:'';position:absolute;left:0;top:0;bottom:0;width:var(--badge-bar-width,4px);background:var(--badge-color)}

@@ -11,7 +11,7 @@ import { parseBranches, parseGraphLog, parseNameStatus, parseStashList, parseTag
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
 
-const GRAPH_FORMAT = '--format=%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s%x1e'
+const GRAPH_FORMAT = '--format=%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e'
 
 /** 7+ hex chars → treat search as a commit hash prefix. */
 function isHexLike(text: string): boolean {
@@ -59,6 +59,7 @@ export async function runQuery(
       case 'stash-list': return await queryStashList(deps, root)
       case 'conflicts': return await queryConflicts(deps, root)
       case 'operation-state': return await queryOperationState(deps, root)
+      case 'remote-url': return await queryRemoteUrl(deps, root)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -492,10 +493,10 @@ function isBinaryBuffer(buf: Buffer): boolean {
 
 async function queryShow(deps: SnapshotDeps, root: string, ref: string): Promise<GitQueryResponse> {
   if (!isSafeRev(ref)) return { ok: false, error: { code: 'invalid-name', message: `unsafe ref: ${ref}` } }
-  // hash / short / subject / author / date / body — body last so a bounded
+  // hash / short / subject / author / email / date / body — body last so a bounded
   // split folds any stray 0x1f (crafted subject/metadata) back into the body,
-  // keeping the five leading fields aligned.
-  const metaFormat = '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%b'
+  // keeping the six leading fields aligned.
+  const metaFormat = '--format=%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%aI%x1f%b'
   const [metaRes, statRes] = await Promise.all([
     runCommand(deps.run, ['git', 'show', '-s', metaFormat, '--end-of-options', ref], root, 'show-meta', deps.signal),
     runCommand(deps.run, ['git', 'show', '--name-status', '-z', '--format=', '--end-of-options', ref], root, 'show-stat', deps.signal),
@@ -509,15 +510,16 @@ async function queryShow(deps: SnapshotDeps, root: string, ref: string): Promise
   const parts = metaRes.run.stdout.split('\x1f')
   let commit: GitCommit | null = null
   let body = ''
-  if (parts.length >= 5 && parts[0]) {
+  if (parts.length >= 6 && parts[0]) {
     commit = {
       hash: parts[0]!,
       shortHash: parts[1] ?? '',
       subject: parts[2] ?? '',
       author: parts[3] ?? '',
-      dateIso: parts[4] ?? '',
+      authorEmail: parts[4] ?? '',
+      dateIso: parts[5] ?? '',
     }
-    body = parts.slice(5).join('\x1f').trim()
+    body = parts.slice(6).join('\x1f').trim()
   }
   const stats: GitFileStat[] = 'run' in statRes && statRes.run.exitCode === 0
     ? parseNameStatus(statRes.run.stdout)
@@ -620,6 +622,16 @@ async function queryConflicts(deps: SnapshotDeps, root: string): Promise<GitQuer
 async function queryOperationState(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
   const operation = await detectOperation(deps, root)
   return { ok: true, value: { kind: 'operation-state', operation } }
+}
+
+async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  // Empty (not failure) when no origin exists: callers treat it as "unknown".
+  const res = await runCommand(deps.run, ['git', 'remote', 'get-url', 'origin'], root, 'remote-url', deps.signal)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  const url = res.run.exitCode === 0 ? res.run.stdout.trim() : ''
+  return { ok: true, value: { kind: 'remote-url', url } }
 }
 
 /** Resolve the git dir (handles worktree .git files) then probe MERGE/REBASE state. */

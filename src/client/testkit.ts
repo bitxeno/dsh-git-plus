@@ -9,6 +9,7 @@ export { planAction, pickDefaultRemote, resolvePushRemote, isNetworkCommand } fr
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
 export { layoutGraph, graphWidth } from './git-graph.ts'
+export { authorAvatarUrl, githubUsernameFromNoreply, gravatarUrlFor, isGitHubRemote, md5Hex } from './avatar.ts'
 export { buildFullGraph, buildPathD, computeCurrentBranchSet, computeRefAncestorSet, resolveGraphColor } from './graph-plus.ts'
 export { gitPanelRemoteOf, queryAs, hasSession } from './rpc.ts'
 export { splitHighlightSpans } from './code-spans.ts'

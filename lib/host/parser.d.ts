@@ -11,7 +11,7 @@ import type { GitBranch, GitChange, GitFileStat, GraphCommit, GitRef, StashEntry
 export declare function parseStatus(stdout: string): GitChange[];
 /**
  * Parse a graph log emitted with the record format:
- *   %H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s%x1e
+ *   %H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e
  * (unit sep 0x1f between fields, record sep 0x1e between commits.)
  */
 export declare function parseGraphLog(stdout: string): GraphCommit[];

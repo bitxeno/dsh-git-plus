@@ -55,6 +55,8 @@ export interface GitCommit {
   readonly shortHash: string
   readonly subject: string
   readonly author: string
+  /** Author email (`%ae`); drives avatar lookup, may be empty. */
+  readonly authorEmail: string
   readonly dateIso: string
 }
 
@@ -231,6 +233,7 @@ export type GitQuery =
   | { readonly kind: 'stash-list' }
   | { readonly kind: 'conflicts' }
   | { readonly kind: 'operation-state' }
+  | { readonly kind: 'remote-url' }
 
 export interface DirEntry {
   readonly name: string
@@ -309,6 +312,7 @@ export type GitQueryResult =
   | { readonly kind: 'stash-list'; readonly stashes: readonly StashEntry[] }
   | { readonly kind: 'conflicts'; readonly files: readonly string[] }
   | { readonly kind: 'operation-state'; readonly operation: GitOperationState | null }
+  | { readonly kind: 'remote-url'; readonly url: string }
 
 export type GitQueryResponse =
   | { readonly ok: true; readonly value: GitQueryResult }

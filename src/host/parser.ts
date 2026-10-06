@@ -59,7 +59,7 @@ export function parseStatus(stdout: string): GitChange[] {
 
 /**
  * Parse a graph log emitted with the record format:
- *   %H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s%x1e
+ *   %H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e
  * (unit sep 0x1f between fields, record sep 0x1e between commits.)
  */
 export function parseGraphLog(stdout: string): GraphCommit[] {
@@ -68,18 +68,19 @@ export function parseGraphLog(stdout: string): GraphCommit[] {
     const rec = record.replace(/^\n+/, '')
     if (rec.trim() === '') continue
     // Bounded split: the subject (last field) may itself contain a stray 0x1f
-    // from crafted commit metadata; capping at 7 pieces keeps every earlier
+    // from crafted commit metadata; capping at 8 pieces keeps every earlier
     // field aligned and folds any extra separators back into the subject.
     const parts = rec.split('\x1f')
-    if (parts.length < 7) continue
-    const [hash, shortHash, parentsRaw, author, dateIso, decoration] = parts
-    const subject = parts.slice(6).join('\x1f')
+    if (parts.length < 8) continue
+    const [hash, shortHash, parentsRaw, author, authorEmail, dateIso, decoration] = parts
+    const subject = parts.slice(7).join('\x1f')
     const parents = (parentsRaw ?? '').trim() === '' ? [] : parentsRaw!.trim().split(/\s+/)
     out.push({
       hash: hash ?? '',
       shortHash: shortHash ?? '',
       subject,
       author: author ?? '',
+      authorEmail: authorEmail ?? '',
       dateIso: dateIso ?? '',
       parents,
       refs: parseRefs(decoration ?? ''),

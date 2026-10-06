@@ -8,6 +8,7 @@ import { createElement as h, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { JSX } from 'react'
 import type { GitPanelRemote } from './rpc'
+import { queryAs } from './rpc'
 import type { GraphCommit } from './types'
 import type { GitKey } from './locales'
 import { ChevronIcon, CloseIcon, FileIcon, RefreshIcon } from './icons'
@@ -23,6 +24,7 @@ import { statusChar, statusClass } from './status'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
 import { ContextMenu, copyText } from './ContextMenu'
 import { Tip } from './Tip'
+import { authorAvatarUrl, isGitHubRemote } from './avatar'
 import { useBranchTree, useCommitDetail, useHistory, type HistoryFilter } from './overview-hooks'
 import { segButtons } from './seg'
 import type { DiffViewMode } from './types'
@@ -80,6 +82,17 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
     setPendingScroll(externalRef)
   }, [externalRef])
   const [searchInput, setSearchInput] = useState('')
+  // GitHub remote gate for author avatars (Gravatar needs nothing else).
+  const [isGitHub, setIsGitHub] = useState(false)
+  useEffect(() => {
+    let alive = true
+    void remote.query({ sessionId, query: { kind: 'remote-url' } }).then((res) => {
+      if (!alive) return
+      const v = queryAs(res, 'remote-url')
+      setIsGitHub(v !== null && isGitHubRemote(v.url))
+    })
+    return () => { alive = false }
+  }, [remote, sessionId, refreshKey])
   const [searchEl, setSearchEl] = useState<HTMLElement | null>(null)
   const searchNarrow = useNarrow(searchEl, SEARCH_HINT_MIN_W)
   const { authors, reload: reloadTree } = useBranchTree(remote, sessionId, refreshKey)
@@ -266,6 +279,7 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
                 : '#888',
               localOnly: full?.dots[index]?.localOnly ?? false,
               remoteOnly: full?.dots[index]?.remoteTip ?? false,
+              avatarUrl: authorAvatarUrl(commit.authorEmail, 36, isGitHub),
               onSelect: () => { void detail.select(commit); setBottomTab('commit') },
               onMenu: (x, y) => setRowMenu({ x, y, hash: commit.hash, shortHash: commit.shortHash, subject: commit.subject }),
               onCheckout: () => onCheckoutAt(commit.hash, commit.subject),
@@ -320,7 +334,11 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
       ]),
       h('div', { key: 'body', className: 'ggp-bottom__body' },
         bottomTab === 'commit' && selected !== null
-          ? renderCommitMeta(selected, detail.detail?.body ?? null, { onParent: jumpToParent, t })
+          ? renderCommitMeta(selected, detail.detail?.body ?? null, {
+            onParent: jumpToParent,
+            avatarUrl: authorAvatarUrl(selected.authorEmail, 36, isGitHub),
+            t,
+          })
           : detail.detail === null
             ? h('div', { className: 'gp-empty' }, detail.detailError ? t('overview.detailFailed') : t('common.loading'))
             : renderFileTree(fileTree, {
@@ -350,6 +368,7 @@ function writeBottomHeight(height: number): void {
 
 interface CommitMetaCbs {
   readonly onParent: (hash: string) => void
+  readonly avatarUrl: string | null
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
@@ -361,7 +380,11 @@ function renderCommitMeta(
 ): JSX.Element {
   return h('div', { className: 'ggp-commit' }, [
     h('div', { key: 'subj', className: 'ggp-commit__subject' }, commit.subject),
-    h('div', { key: 'meta', className: 'ggp-commit__meta' }, [
+    h('div', { key: 'meta', className: 'ggp-commit__meta ggp-commit__author' }, [
+      cb.avatarUrl !== null ? h('img', {
+        key: 'av', className: 'ggp-avatar', src: cb.avatarUrl, alt: '',
+        onError: (e: { currentTarget: HTMLImageElement }) => { e.currentTarget.style.display = 'none' },
+      }) : null,
       h('span', { key: 'a' }, commit.author),
       h('span', { key: 'd', title: absoluteTime(commit.dateIso) }, absoluteDateTime(commit.dateIso)),
       h('span', { key: 'h', className: 'gp-commit-hash', title: commit.hash }, commit.shortHash),
@@ -425,6 +448,8 @@ interface PlusRowCbs {
   nodeColor: string
   localOnly: boolean
   remoteOnly: boolean
+  /** Resolved avatar URL (GitHub profile or Gravatar); null shows no avatar. */
+  avatarUrl: string | null
   onSelect: () => void
   onMenu: (x: number, y: number) => void
   onCheckout: () => void
@@ -511,7 +536,13 @@ function renderPlusRow(commit: GraphCommit, cb: PlusRowCbs): JSX.Element {
       ...badges,
       h('span', { key: 's', className: 'ggp-subject' }, commit.subject),
     ]),
-    h('div', { key: 'a', className: 'gp-commit-author' }, commit.author),
+    h('div', { key: 'a', className: 'gp-commit-author' }, [
+      cb.avatarUrl !== null ? h('img', {
+        key: 'av', className: 'ggp-avatar', src: cb.avatarUrl, alt: '',
+        onError: (e: { currentTarget: HTMLImageElement }) => { e.currentTarget.style.display = 'none' },
+      }) : null,
+      h('span', { key: 'n', className: 'ggp-authorname' }, commit.author),
+    ]),
     h('div', { key: 'h', className: 'gp-commit-hash', title: commit.hash }, commit.shortHash),
     h('div', { key: 'd', className: 'gp-commit-date', title: absoluteTime(commit.dateIso) }, timeAgo(commit.dateIso, cb.now, cb.t)),
   ])

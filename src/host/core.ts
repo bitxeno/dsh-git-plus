@@ -243,7 +243,7 @@ export async function snapshotForSession(
     runCommand(deps.run, ['git', 'rev-parse', '--short', 'HEAD'], root, 'head', deps.signal),
     runCommand(deps.run, ['git', 'status', '--porcelain=v1', '-z'], root, 'status', deps.signal),
     runCommand(deps.run, ['git', 'rev-list', '--count', '--left-right', '@{upstream}...HEAD'], root, 'aheadBehind', deps.signal),
-    runCommand(deps.run, ['git', 'log', '-1', '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI'], root, 'lastCommit', deps.signal),
+    runCommand(deps.run, ['git', 'log', '-1', '--format=%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%aI'], root, 'lastCommit', deps.signal),
     runCommand(deps.run, ['git', 'diff', '--numstat'], root, 'numstat-worktree', deps.signal),
     runCommand(deps.run, ['git', 'diff', '--numstat', '--cached'], root, 'numstat-staged', deps.signal),
     runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'conflicts', deps.signal),
@@ -288,13 +288,14 @@ export async function snapshotForSession(
   let lastCommit: GitCommit | null = null
   if ('run' in lastCommitRes && lastCommitRes.run.exitCode === 0) {
     const parts = lastCommitRes.run.stdout.trim().split('\x1f')
-    if (parts.length >= 5 && parts[0]) {
+    if (parts.length >= 6 && parts[0]) {
       lastCommit = {
         hash: parts[0]!,
         shortHash: parts[1] ?? '',
         subject: parts[2] ?? '',
         author: parts[3] ?? '',
-        dateIso: parts[4] ?? '',
+        authorEmail: parts[4] ?? '',
+        dateIso: parts[5] ?? '',
       }
     }
   }
