@@ -198,11 +198,11 @@ export function PullModal(props: SyncModalProps): JSX.Element {
 
 // ── push ─────────────────────────────────────────────────────────────────
 
-export function PushModal(props: SyncModalProps): JSX.Element {
+export function PushModal(props: SyncModalProps & { readonly initialBranch?: string; readonly initialTo?: string }): JSX.Element {
   const data = useBranchData(props.remote, props.sessionId)
-  const [pickedBranch, setPickedBranch] = useState('')
+  const [pickedBranch, setPickedBranch] = useState(props.initialBranch ?? '')
   // `remote/branch` target; '' = the default remote with the same name.
-  const [pickedTo, setPickedTo] = useState('')
+  const [pickedTo, setPickedTo] = useState(props.initialTo ?? '')
   const [setUpstream, setSetUpstream] = useState(true)
   const [tags, setTags] = useState(false)
   const [force, setForce] = useState(false)

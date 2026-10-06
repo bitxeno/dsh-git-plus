@@ -18,6 +18,7 @@ import { MergeBranchModal } from './modals/MergeBranch'
 import { StashSaveModal } from './modals/StashSave'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
+import { RenameBranchModal } from './modals/RenameBranch'
 import type { GitAction } from './types'
 import type { GitKey } from './locales'
 
@@ -34,9 +35,10 @@ type ModalState =
   | { kind: 'stash' }
   | { kind: 'fetch' }
   | { kind: 'pull' }
-  | { kind: 'push' }
+  | { kind: 'push'; branch?: string; remote?: string }
+  | { kind: 'rename'; oldName: string }
   | { kind: 'checkout'; ref: string; subject: string }
-  | { kind: 'confirm'; title: string; message: string; action: GitAction }
+  | { kind: 'confirm'; title: string; message: string; action: GitAction; danger?: boolean }
   | null
 
 function normalizeSubTab(tab: SubTab | 'overview' | 'changes'): SubTab {
@@ -170,6 +172,15 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         else setModal({ kind: 'stash' })
       },
       onCheckoutRef: (ref, subject) => setModal({ kind: 'checkout', ref, subject }),
+      onPushBranch: (branch, remote) => setModal({ kind: 'push', branch, remote }),
+      onPushTag: (tag, remote) => setModal({
+        kind: 'confirm',
+        title: t('modal.pushTagTitle'),
+        message: t('modal.pushTagConfirm', { tag, remote }),
+        action: { kind: 'push', remote, branch: tag, tag },
+        danger: false,
+      }),
+      onRenameBranch: (oldName) => setModal({ kind: 'rename', oldName }),
       onDeleteRef: (kind, name) => setModal({
         kind: 'confirm',
         title: t(kind === 'branch' ? 'modal.deleteBranchTitle' : 'modal.deleteTagTitle'),
@@ -207,9 +218,14 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
   if (modal.kind === 'stash') return h(StashSaveModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'fetch') return h(FetchModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'pull') return h(PullModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
-  if (modal.kind === 'push') return h(PushModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'push') return h(PushModal, {
+    remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction,
+    ...(modal.branch !== undefined ? { initialBranch: modal.branch } : {}),
+    ...(modal.remote !== undefined ? { initialRemote: modal.remote } : {}),
+  })
   if (modal.kind === 'checkout') return h(CheckoutModal, { t: ctx.t, refName: modal.ref, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
-  if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: true, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'rename') return h(RenameBranchModal, { t: ctx.t, oldName: modal.oldName, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: modal.danger ?? true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })
 }
 

@@ -30,6 +30,25 @@ describe('planAction git-plus', () => {
     const r = planAction({ kind: 'create-branch', name: '-evil' }, false)
     assert.ok('error' in r)
   })
+  it('plans rename-branch', () => {
+    const r = planAction({ kind: 'rename-branch', oldName: 'foo', newName: 'bar' }, false)
+    assert.ok('argv' in r)
+    assert.deepEqual(r.argv, [['git', 'branch', '-m', '--end-of-options', 'foo', 'bar']])
+  })
+  it('rejects unsafe or unchanged rename-branch names', () => {
+    assert.ok('error' in planAction({ kind: 'rename-branch', oldName: '-evil', newName: 'bar' }, false))
+    assert.ok('error' in planAction({ kind: 'rename-branch', oldName: 'foo', newName: '-evil' }, false))
+    assert.ok('error' in planAction({ kind: 'rename-branch', oldName: 'foo', newName: 'foo' }, false))
+  })
+  it('plans single-tag push', () => {
+    const r = planAction({ kind: 'push', remote: 'origin', branch: 'main', tag: 'v1.0.0' }, false)
+    assert.ok('argv' in r)
+    assert.deepEqual(r.argv, [['git', 'push', '--end-of-options', 'origin', 'v1.0.0']])
+  })
+  it('rejects unsafe tag push names', () => {
+    assert.ok('error' in planAction({ kind: 'push', remote: 'origin', branch: 'main', tag: '-evil' }, false))
+    assert.ok('error' in planAction({ kind: 'push', remote: 'origin', branch: 'main', tag: '/x' }, false))
+  })
   it('flags fetch/pull/push commands for the network timeout', () => {
     assert.equal(isNetworkCommand(['git', 'fetch', '--all', '--prune']), true)
     assert.equal(isNetworkCommand(['git', 'pull', '--rebase', 'origin', 'main']), true)

@@ -148,10 +148,13 @@ export type GitAction =
     readonly setUpstream?: boolean
     /** Also push every tag (--tags). */
     readonly tags?: boolean
+    /** Push a single tag instead of a branch (`refs/tags/<tag>`). */
+    readonly tag?: string
     readonly force?: boolean
   }
   | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean }
   | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean }
+  | { readonly kind: 'rename-branch'; readonly oldName: string; readonly newName: string }
   | {
     readonly kind: 'create-tag'
     readonly name: string

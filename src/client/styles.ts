@@ -521,6 +521,7 @@ const CSS = `
 .gp-ctx__item:focus-visible:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);outline:none}
 .gp-ctx__item--danger{color:var(--dsw-alias-state-error-primary)}
 .gp-ctx__item--danger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger)}
+.gp-ctx__sep{height:.5px;margin:3px 2px;background:var(--dsw-alias-border-l2)}
 .gp-modal__warn{font-size:13px;color:var(--dsw-alias-state-error-primary)}
 .gp-modal__subject{font-size:12px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 `

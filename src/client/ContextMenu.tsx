@@ -8,9 +8,11 @@ import type { JSX } from 'react'
 
 export interface MenuItem {
   readonly key: string
-  readonly label: string
+  readonly label?: string
   readonly danger?: boolean
-  readonly onSelect: () => void
+  /** Separator row: label/onSelect are ignored. */
+  readonly separator?: boolean
+  readonly onSelect?: () => void
 }
 
 interface ContextMenuProps {
@@ -22,6 +24,7 @@ interface ContextMenuProps {
 
 const MENU_W = 220
 const ROW_H = 30
+const SEP_H = 7
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps): JSX.Element | null {
   useEffect(() => {
@@ -31,7 +34,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps): JSX.Ele
   }, [onClose])
 
   if (typeof document === 'undefined') return null
-  const height = items.length * ROW_H + 8
+  const sepCount = items.filter((it) => it.separator === true).length
+  const height = (items.length - sepCount) * ROW_H + sepCount * SEP_H + 8
   const left = Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8))
   const top = Math.max(8, Math.min(y, window.innerHeight - height - 8))
   return createPortal(
@@ -43,11 +47,13 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps): JSX.Ele
       className: 'gp-ctx', style: { left, top },
       onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(),
       onContextMenu: (e: { stopPropagation: () => void }) => e.stopPropagation(),
-    }, items.map((it) => h('button', {
-      key: it.key, type: 'button',
-      className: `gp-ctx__item${it.danger === true ? ' gp-ctx__item--danger' : ''}`,
-      onClick: () => { onClose(); it.onSelect() },
-    }, it.label)))),
+    }, items.map((it) => it.separator === true
+      ? h('div', { key: it.key, className: 'gp-ctx__sep' })
+      : h('button', {
+        key: it.key, type: 'button',
+        className: `gp-ctx__item${it.danger === true ? ' gp-ctx__item--danger' : ''}`,
+        onClick: () => { onClose(); it.onSelect?.() },
+      }, it.label ?? '')))),
     document.body,
   )
 }

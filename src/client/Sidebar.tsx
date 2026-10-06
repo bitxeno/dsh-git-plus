@@ -30,6 +30,9 @@ interface SidebarProps {
   readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push', preset?: string) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
   readonly onDeleteRef: (kind: 'branch' | 'tag', name: string) => void
+  readonly onPushBranch: (branch: string, remote: string) => void
+  readonly onPushTag: (tag: string, remote: string) => void
+  readonly onRenameBranch: (oldName: string) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
@@ -37,6 +40,8 @@ interface BranchTree {
   current: string | null
   local: readonly GitBranch[]
   remote: readonly GitBranch[]
+  /** Configured remote names (`git remote`), for push targets. */
+  remotes: readonly string[]
   tags: readonly GitBranch[]
   stashes: readonly StashEntry[]
 }
@@ -60,7 +65,7 @@ type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
 export function Sidebar(props: SidebarProps): JSX.Element {
-  const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, t } = props
+  const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, onPushBranch, onPushTag, onRenameBranch, t } = props
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
@@ -85,7 +90,14 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       const tg = queryAs(tRes, 'tags')
       const st = queryAs(sRes, 'stash-list')
       setError(false)
-      setTree({ current: b.current, local: b.local, remote: b.remote, tags: tg?.tags ?? [], stashes: st?.stashes ?? [] })
+      setTree({
+        current: b.current,
+        local: b.local,
+        remote: b.remote,
+        remotes: b.remotes ?? [...new Set(b.remote.map((r) => r.name.split('/')[0] ?? ''))].filter((r) => r !== ''),
+        tags: tg?.tags ?? [],
+        stashes: st?.stashes ?? [],
+      })
     })()
     return () => { alive = false }
   }, [remote, sessionId, refreshKey, reloadSeq])
@@ -145,29 +157,44 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     ]),
   )
 
+  const pushRemote = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
+  const sep = (key: string): MenuItem => ({ key, separator: true })
   const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'stash-create'
     ? [
       { key: 'ns', label: t('side.newStash'), onSelect: () => onOpenModal('stash') },
     ]
     : menu.kind === 'branch'
     ? [
-      ...(menu.current ? [] : [{
-        key: 'co', label: t('side.checkout'),
-        onSelect: () => void run({ kind: 'branch-checkout', name: menu.name }),
-      }]),
+      ...(menu.current ? [] : [
+        {
+          key: 'co', label: t('side.checkout'),
+          onSelect: () => void run({ kind: 'branch-checkout', name: (menu as { name: string }).name }),
+        },
+        sep('s1'),
+      ]),
+      ...(pushRemote !== undefined ? [{
+        key: 'push', label: t('menu.pushTo', { remote: pushRemote }),
+        onSelect: () => onPushBranch((menu as { name: string }).name, pushRemote),
+      }] : []),
       ...(menu.current ? [] : [{
         key: 'mg', label: t('side.merge'),
-        onSelect: () => onOpenModal('merge', menu.name),
+        onSelect: () => onOpenModal('merge', (menu as { name: string }).name),
       }]),
+      sep('s2'),
       {
         key: 'nb', label: t('menu.createBranchAt'),
-        onSelect: () => onOpenModal('branch', menu.name),
+        onSelect: () => onOpenModal('branch', (menu as { name: string }).name),
       },
       {
         key: 'nt', label: t('menu.createTagAt'),
-        onSelect: () => onOpenModal('tag', menu.name),
+        onSelect: () => onOpenModal('tag', (menu as { name: string }).name),
       },
-      { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText(menu.name) },
+      sep('s3'),
+      {
+        key: 'rn', label: t('menu.rename'),
+        onSelect: () => onRenameBranch((menu as { name: string }).name),
+      },
+      { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText((menu as { name: string }).name) },
       ...(menu.current ? [] : [{
         key: 'del', label: t('side.delete'), danger: true,
         onSelect: () => onDeleteRef('branch', (menu as { name: string }).name),
@@ -175,6 +202,12 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     ]
     : [
       { key: 'co', label: t('menu.checkoutTag'), onSelect: () => onCheckoutRef(menu.name, '') },
+      sep('s1'),
+      ...(pushRemote !== undefined ? [{
+        key: 'push', label: t('menu.pushTo', { remote: pushRemote }),
+        onSelect: () => onPushTag((menu as { name: string }).name, pushRemote),
+      }] : []),
+      sep('s2'),
       {
         key: 'nb', label: t('menu.createBranchAt'),
         onSelect: () => onOpenModal('branch', menu.name),
@@ -183,6 +216,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
         key: 'nt', label: t('menu.createTagAt'),
         onSelect: () => onOpenModal('tag', menu.name),
       },
+      sep('s3'),
       { key: 'cp', label: t('menu.copyTagName'), onSelect: () => void copyText(menu.name) },
       {
         key: 'del', label: t('side.delete'), danger: true,

@@ -97,6 +97,10 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
     }
     case 'push': {
       if (!isSafeRev(action.remote)) return { error: 'invalid-name', message: `unsafe remote: ${action.remote}` }
+      if (action.tag !== undefined) {
+        if (!isSafeRev(action.tag) || action.tag.startsWith('/')) return { error: 'invalid-name', message: `unsafe tag name: ${action.tag}` }
+        return { argv: [['git', 'push', ...(action.force === true ? ['--force'] : []), '--end-of-options', action.remote, action.tag]] }
+      }
       if (!isSafeBranchName(action.branch)) return { error: 'invalid-name', message: `unsafe branch: ${action.branch}` }
       const to = action.toBranch ?? action.branch
       if (!isSafeBranchName(to)) return { error: 'invalid-name', message: `unsafe branch: ${to}` }
@@ -126,6 +130,12 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       const bad = safeBranch(action.name)
       if (bad) return bad
       return { argv: [['git', 'branch', action.force === true ? '-D' : '-d', '--end-of-options', action.name]] }
+    }
+    case 'rename-branch': {
+      if (!isSafeBranchName(action.oldName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.oldName}` }
+      if (!isSafeBranchName(action.newName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.newName}` }
+      if (action.oldName === action.newName) return { error: 'invalid-name', message: 'branch name unchanged' }
+      return { argv: [['git', 'branch', '-m', '--end-of-options', action.oldName, action.newName]] }
     }
     case 'create-tag': {
       if (!isSafeRev(action.name) || action.name.startsWith('/')) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
