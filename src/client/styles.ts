@@ -298,6 +298,7 @@ const CSS = `
 .gp-diff-word{border-radius:3px;padding:0 1px}
 .gp-diff-word--add{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 38%,transparent)}
 .gp-diff-word--del{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 38%,transparent)}
+.gp-diff__truncated{color:var(--dsw-alias-label-tertiary);font-style:italic}
 /* image comparison: old/new panes (split) or one pane (before/after) */
 .gp-imgcmp{display:grid;grid-template-columns:1fr 1fr;gap:1px;height:100%;background:var(--dsw-alias-border-l2)}
 .gp-imgcmp--single{grid-template-columns:1fr}

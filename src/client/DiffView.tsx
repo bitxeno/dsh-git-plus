@@ -75,6 +75,18 @@ export const DiffView = memo(function DiffView({ text, mode, path, remote, sessi
   // reseed whenever the underlying diff text changes.
   const [rows, setRows] = useState<readonly SideRow[]>(baseRows)
   useEffect(() => { setRows(baseRows) }, [baseRows])
+
+  // Time-sliced mount: paint the first window synchronously, then append the
+  // rest one frame at a time. A multi-thousand-row diff previously mounted
+  // tens of thousands of highlighted spans in one commit and froze input;
+  // now the panel stays responsive while the tail streams in.
+  const [renderLimit, setRenderLimit] = useState(RENDER_FIRST)
+  useEffect(() => { setRenderLimit(RENDER_FIRST) }, [text, path, mode])
+  useEffect(() => {
+    if (renderLimit >= rows.length) return
+    const raf = requestAnimationFrame(() => setRenderLimit((cur) => Math.min(rows.length, cur + RENDER_STEP)))
+    return () => cancelAnimationFrame(raf)
+  }, [renderLimit, rows.length])
   const expand = useGapExpander(rows, setRows, remote, sessionId, path, imageSpec)
 
   // An SVG is both an image (rendered old/new comparison) and text (a source
@@ -101,9 +113,11 @@ export const DiffView = memo(function DiffView({ text, mode, path, remote, sessi
   const activeRef = useRef<HTMLElement | null>(null)
   useEffect(() => { setFindOpen(false); setQuery(''); setActiveIndex(0) }, [text, path])
 
-  const cells = useMemo(() => collectCells(mode, rows), [mode, rows])
+  const cells = useMemo(() => (findOpen ? collectCells(mode, rows) : []), [findOpen, mode, rows])
   // Cache a lowercased copy of every visible cell once per (mode, rows); a
   // case-insensitive scan reuses it instead of re-lowercasing on each query.
+  // Indexing waits until Find actually opens — mounting a huge diff no longer
+  // pays a full-text scan it may never use.
   const lowerCells = useMemo(() => cells.map((c) => ({ key: c.key, text: c.text.toLowerCase() })), [cells])
   const debouncedQuery = useDebounced(query, FIND_DEBOUNCE_MS)
   const needle = caseSensitive ? debouncedQuery : debouncedQuery.toLowerCase()
@@ -183,15 +197,20 @@ export const DiffView = memo(function DiffView({ text, mode, path, remote, sessi
   }
 
   // Text diff (regular files, and an SVG in 'source' mode).
+  // The active Find match must stay mounted even mid-stream, or its scroll
+  // target vanishes; widen this frame's window to cover it.
+  const activeRowIdx = active !== null ? cellRowIndex(active.cellKey) : null
+  const limit = activeRowIdx === null ? renderLimit : Math.max(renderLimit, activeRowIdx + 1)
+  const truncNote = t('files.lineTruncated')
   const body = ((): JSX.Element => {
     if (text.trim() === '') return h('div', { className: 'gp-empty' }, t('diff.empty'))
-    if (mode === 'before') return singleColumn(beforeLines(rows), hl, find)
-    if (mode === 'after') return singleColumn(afterLines(rows), hl, find)
+    if (mode === 'before') return singleColumn(beforeLines(rows).slice(0, limit), hl, find, truncNote)
+    if (mode === 'after') return singleColumn(afterLines(rows).slice(0, limit), hl, find, truncNote)
     if (mode === 'unified') {
-      const uni = flattenToUnified(rows)
-      return h('div', { className: 'gp-diff__unified' }, uni.flatMap((row, i) => renderUnifiedRow(row, i, hl, expand, find, t)))
+      const uni = flattenToUnified(rows).slice(0, limit)
+      return h('div', { className: 'gp-diff__unified' }, uni.flatMap((row, i) => renderUnifiedRow(row, i, hl, expand, find, t, truncNote)))
     }
-    return h('div', { className: 'gp-diff__side' }, rows.flatMap((row, i) => renderRow(row, i, hl, expand, find, t)))
+    return h('div', { className: 'gp-diff__side' }, rows.slice(0, limit).flatMap((row, i) => renderRow(row, i, hl, expand, find, t, truncNote)))
   })()
 
   const findBox = findOpen ? h(FindBar, {
@@ -202,6 +221,21 @@ export const DiffView = memo(function DiffView({ text, mode, path, remote, sessi
   const wrapped = h('div', { className: 'gp-diff__wrap', ref: containerRef }, [findBox, body])
   return svg ? svgFrame(svgView, setSvgView, wrapped, t) : wrapped
 })
+
+/** First paint row budget, then per-frame append budget (time-sliced mount). */
+const RENDER_FIRST = 300
+const RENDER_STEP = 1000
+/** Display cap per code line (FilesTab precedent): longer lines render
+ * truncated with no syntax or match highlighting. */
+const MAX_LINE_CHARS = 5000
+
+/** Trailing row index encoded in a render cell key (`l12`/`r12`/`c12`). */
+function cellRowIndex(cellKey: string): number | null {
+  const m = /(\d+)$/.exec(cellKey)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isFinite(n) ? n : null
+}
 
 /** A single match location within the diff, addressed by visible cell key. */
 interface DiffMatch { readonly cellKey: string; readonly start: number; readonly end: number }
@@ -379,9 +413,13 @@ function withFindMarks(
 }
 
 /** A highlighted code cell, or plain text until its grammar loads. Find
- * matches (when active) are marked in place, preserving syntax colors. */
-function codeCell(className: string, key: string, content: string, hl: CodeHighlighter, find: FindCtx | null = null): JSX.Element {
+ * matches (when active) are marked in place, preserving syntax colors.
+ * Lines past MAX_LINE_CHARS render truncated with no syntax or marks. */
+function codeCell(className: string, key: string, content: string, hl: CodeHighlighter, find: FindCtx | null = null, truncatedNote = ' …'): JSX.Element {
   if (content === '') return h('div', { key, className }, '\u00a0')
+  if (content.length > MAX_LINE_CHARS) {
+    return h('div', { key, className }, [content.slice(0, MAX_LINE_CHARS), h('span', { key: 'tr', className: 'gp-diff__truncated' }, truncatedNote)])
+  }
   const spans = hl(content)?.[0]
   const marked = withFindMarks(content, key, find, spans)
   if (marked !== null) return h('div', { key, className }, marked)
@@ -390,11 +428,15 @@ function codeCell(className: string, key: string, content: string, hl: CodeHighl
 
 /** Highlight the whole line once, then split runs at the word-diff boundaries.
  * When Find is active on this cell, match marks take precedence over the
- * word-diff emphasis (both are just spans; the search overlay wins visually). */
+ * word-diff emphasis (both are just spans; the search overlay wins visually).
+ * Over-long lines render truncated like codeCell. */
 function wordCell(
   className: string, key: string, content: string, range: readonly [number, number],
-  wordCls: string, hl: CodeHighlighter, find: FindCtx | null = null,
+  wordCls: string, hl: CodeHighlighter, find: FindCtx | null = null, truncatedNote = ' …',
 ): JSX.Element {
+  if (content.length > MAX_LINE_CHARS) {
+    return h('div', { key, className }, [content.slice(0, MAX_LINE_CHARS), h('span', { key: 'tr', className: 'gp-diff__truncated' }, truncatedNote)])
+  }
   const spans = hl(content)?.[0] ?? [{ text: content, style: {} }]
   const marked = withFindMarks(content, key, find, spans)
   if (marked !== null) return h('div', { key, className }, marked)
@@ -421,16 +463,17 @@ function afterLines(rows: readonly SideRow[]): NumberedLine[] {
   return rows.filter((r) => r.rightText !== null).map((r) => ({ no: r.rightNo, text: r.rightText as string }))
 }
 
-function singleColumn(lines: readonly NumberedLine[], hl: CodeHighlighter, find: FindCtx | null = null): JSX.Element {
+function singleColumn(lines: readonly NumberedLine[], hl: CodeHighlighter, find: FindCtx | null = null, truncatedNote = ' \u2026'): JSX.Element {
   return h('div', { className: 'gp-diff__single' }, lines.flatMap((line, i) => [
     h('div', { key: `n${i}`, className: 'gp-diff-no' }, line.no ?? ''),
-    codeCell('gp-diff-cell', `c${i}`, line.text, hl, find),
+    codeCell('gp-diff-cell', `c${i}`, line.text, hl, find, truncatedNote),
   ]))
 }
 
 function renderRow(
   row: SideRow, i: number, hl: CodeHighlighter,
   expand: GapExpander, find: FindCtx | null, t: (key: GitKey, params?: Record<string, string | number>) => string,
+  truncatedNote = ' \u2026',
 ): JSX.Element[] {
   if (row.kind === 'hunk') {
     return [h('div', { key: `h${i}`, className: 'gp-diff-row--hunk gp-diff-cell', style: { gridColumn: '1 / -1' } }, row.text ?? '')]
@@ -443,13 +486,13 @@ function renderRow(
   const leftCell = row.leftText === null
     ? h('div', { key: `l${i}`, className: `gp-diff-cell ${leftCls}` })
     : row.kind === 'mod' && row.leftWord !== undefined
-      ? wordCell(`gp-diff-cell ${leftCls}`, `l${i}`, row.leftText, row.leftWord, 'gp-diff-word gp-diff-word--del', hl, find)
-      : codeCell(`gp-diff-cell ${leftCls}`, `l${i}`, row.leftText, hl, find)
+      ? wordCell(`gp-diff-cell ${leftCls}`, `l${i}`, row.leftText, row.leftWord, 'gp-diff-word gp-diff-word--del', hl, find, truncatedNote)
+      : codeCell(`gp-diff-cell ${leftCls}`, `l${i}`, row.leftText, hl, find, truncatedNote)
   const rightCell = row.rightText === null
     ? h('div', { key: `r${i}`, className: `gp-diff-cell ${rightCls}` })
     : row.kind === 'mod' && row.rightWord !== undefined
-      ? wordCell(`gp-diff-cell ${rightCls}`, `r${i}`, row.rightText, row.rightWord, 'gp-diff-word gp-diff-word--add', hl, find)
-      : codeCell(`gp-diff-cell ${rightCls}`, `r${i}`, row.rightText, hl, find)
+      ? wordCell(`gp-diff-cell ${rightCls}`, `r${i}`, row.rightText, row.rightWord, 'gp-diff-word gp-diff-word--add', hl, find, truncatedNote)
+      : codeCell(`gp-diff-cell ${rightCls}`, `r${i}`, row.rightText, hl, find, truncatedNote)
   return [
     h('div', { key: `ln${i}`, className: 'gp-diff-no' }, row.leftNo ?? ''),
     leftCell,
@@ -466,6 +509,7 @@ function renderRow(
 function renderUnifiedRow(
   row: SideRow, i: number, hl: CodeHighlighter,
   expand: GapExpander, find: FindCtx | null, t: (key: GitKey, params?: Record<string, string | number>) => string,
+  truncatedNote = ' \u2026',
 ): JSX.Element[] {
   if (row.kind === 'hunk') {
     return [h('div', { key: `h${i}`, className: 'gp-diff-row--hunk gp-diff-cell', style: { gridColumn: '1 / -1' } }, row.text ?? '')]
@@ -482,8 +526,8 @@ function renderUnifiedRow(
   const wordCls = isAdd ? 'gp-diff-word gp-diff-word--add' : 'gp-diff-word gp-diff-word--del'
   const codeCls = `gp-diff-cell gp-diff-uni__code ${rowCls}`
   const code = wordRange !== undefined
-    ? wordCell(codeCls, `c${i}`, content, wordRange, wordCls, hl, find)
-    : codeCell(codeCls, `c${i}`, content, hl, find)
+    ? wordCell(codeCls, `c${i}`, content, wordRange, wordCls, hl, find, truncatedNote)
+    : codeCell(codeCls, `c${i}`, content, hl, find, truncatedNote)
   return [
     h('div', { key: `ol${i}`, className: 'gp-diff-no' }, row.leftNo ?? ''),
     h('div', { key: `nl${i}`, className: 'gp-diff-no' }, row.rightNo ?? ''),
