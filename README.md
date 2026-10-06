@@ -81,3 +81,13 @@ npm run deploy:local  # rsync lib/ into the local dsh profile
 `lib/` is committed and is what ships; `deploy:local` deploys it to `~/.dsh/profiles/web/node_modules/dsh-git-plus/lib` for local testing.
 
 Releases: push a `chore(release): bump version to X.Y.Z` commit — the workflow tags `vX.Y.Z`, creates the GitHub release (notes via changelogithub), and publishes to npm when the `NPM_TOKEN` secret is configured.
+
+### Publish to npm (one-time setup)
+
+npm publishing is gated on the `NPM_TOKEN` repository secret — without it the workflow ships GitHub releases only:
+
+1. Create the token: npmjs.com → profile avatar → Access Tokens → Generate New Token. Use **Automation** (classic token) or a **Granular Access Token** scoped to the `dsh-git-plus` package with read and write access. Copy it immediately — it is shown only once.
+2. Add it to the repo: GitHub repo → Settings → Secrets and variables → Actions → New repository secret, name `NPM_TOKEN`, value = the token from step 1.
+3. Ship any release afterwards — the workflow publishes automatically (`latest` dist-tag for stable versions, `next` for prereleases containing `-`).
+
+Notes: the npm package name must be unclaimed (the first publish creates it; validate beforehand with `npm publish --dry-run`). To rotate, regenerate the token on npmjs.com and update the secret value.

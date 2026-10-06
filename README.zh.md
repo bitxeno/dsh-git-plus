@@ -81,3 +81,13 @@ npm run deploy:local  # 把 lib/ 同步到本地 dsh profile
 `lib/` 随仓库提交，也是实际发布的内容；`deploy:local` 会把它同步到 `~/.dsh/profiles/web/node_modules/dsh-git-plus/lib` 供本地调试。
 
 发布：推送一条 `chore(release): bump version to X.Y.Z` 提交——workflow 会打 `vX.Y.Z` 标签、创建 GitHub Release（发布说明由 changelogithub 生成），并在配置了 `NPM_TOKEN` secret 的情况下发布 npm。
+
+### 发布 npm（一次性配置）
+
+npm 发布由仓库 secret `NPM_TOKEN` 控制开关——没配就只发 GitHub Release：
+
+1. 建 token：npmjs.com → 右上角头像 → Access Tokens → Generate New Token。用 **Automation**（classic token），或 scope 限定到 `dsh-git-plus` 包且有读写权限的 **Granular Access Token**。建完立刻复制——只显示一次。
+2. 加到仓库：GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret，名字填 `NPM_TOKEN`，值粘贴上一步的 token。
+3. 之后正常发版即可自动发布（正式版打 `latest` 标签，带 `-` 的预发布打 `next`）。
+
+注意：npm 包名必须是没被占用的（首次发布即创建，可先本地 `npm publish --dry-run` 验证）。轮换 token 时去 npmjs.com 重新生成再更新 secret 的值。
