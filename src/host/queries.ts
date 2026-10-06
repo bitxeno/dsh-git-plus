@@ -7,7 +7,7 @@ import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { isSafePath, isSafeRev } from './validate.ts'
-import { parseBranches, parseGraphLog, parseNameStatus, parseStashList, parseTags, markRemotePresence } from './parser.ts'
+import { parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence } from './parser.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
 
@@ -60,6 +60,7 @@ export async function runQuery(
       case 'conflicts': return await queryConflicts(deps, root)
       case 'operation-state': return await queryOperationState(deps, root)
       case 'remote-url': return await queryRemoteUrl(deps, root)
+      case 'quick-status': return await queryQuickStatus(deps, root)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -632,6 +633,53 @@ async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQuer
   if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
   const url = res.run.exitCode === 0 ? res.run.stdout.trim() : ''
   return { ok: true, value: { kind: 'remote-url', url } }
+}
+
+/**
+ * Cheap change fingerprint: branch + ahead/behind (from the status branch
+ * header) + HEAD + status counts in two fast spawns (no log walks, no
+ * numstat, no mtime stats). The client polls this on a short interval and
+ * only pulls a full snapshot when the fingerprint moves. Stash changes are
+ * intentionally uncovered (rare; the 30s snapshot or panel actions pick
+ * them up).
+ */
+async function queryQuickStatus(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
+  const [headRes, statusRes] = await Promise.all([
+    runCommand(deps.run, ['git', 'rev-parse', 'HEAD'], root, 'quick-head', deps.signal),
+    runCommand(deps.run, ['git', 'status', '-b', '--porcelain=v1', '-z'], root, 'quick-status', deps.signal),
+  ])
+  for (const r of [headRes, statusRes]) {
+    if (!('run' in r)) return { ok: false, error: { code: 'git-unavailable' } }
+    if (r.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+    if (r.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  }
+  const head = 'run' in headRes && headRes.run.exitCode === 0 ? headRes.run.stdout.trim() || null : null
+  let branch: string | null = null
+  let ahead = 0
+  let behind = 0
+  let rest = ''
+  if ('run' in statusRes && statusRes.run.exitCode === 0) {
+    const out = statusRes.run.stdout
+    const nul = out.indexOf('\0')
+    if (nul >= 0) {
+      const header = parseBranchHeader(out.slice(0, nul))
+      branch = header.branch
+      ahead = header.ahead
+      behind = header.behind
+      rest = out.slice(nul + 1)
+    } else {
+      rest = out
+    }
+  }
+  let staged = 0
+  let modified = 0
+  let untracked = 0
+  for (const c of parseStatus(rest)) {
+    if (c.status === 'untracked') untracked++
+    else if (c.staged) staged++
+    else modified++
+  }
+  return { ok: true, value: { kind: 'quick-status', branch, head, staged, modified, untracked, ahead, behind } }
 }
 
 /** Resolve the git dir (handles worktree .git files) then probe MERGE/REBASE state. */

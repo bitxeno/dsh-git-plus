@@ -288,6 +288,8 @@ export type GitQuery = {
     readonly kind: 'operation-state';
 } | {
     readonly kind: 'remote-url';
+} | {
+    readonly kind: 'quick-status';
 };
 export interface DirEntry {
     readonly name: string;
@@ -396,6 +398,17 @@ export type GitQueryResult = {
 } | {
     readonly kind: 'remote-url';
     readonly url: string;
+} | {
+    readonly kind: 'quick-status';
+    /** Current branch; null when detached. */
+    readonly branch: string | null;
+    /** Full HEAD hash; null when unborn. */
+    readonly head: string | null;
+    readonly staged: number;
+    readonly modified: number;
+    readonly untracked: number;
+    readonly ahead: number;
+    readonly behind: number;
 };
 export type GitQueryResponse = {
     readonly ok: true;

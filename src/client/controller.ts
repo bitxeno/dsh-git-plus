@@ -7,6 +7,7 @@
  * a single git snapshot serves everyone.
  */
 import type { GitPanelRemote } from './rpc'
+import { queryAs } from './rpc'
 import type { GitSnapshot } from './types'
 
 export type GitView =
@@ -19,6 +20,8 @@ export type GitView =
 const TERMINAL_CODES: ReadonlySet<string> = new Set(['cwd-unavailable'])
 const DEFAULT_POLL_MS = 30_000
 const NO_CWD_POLL_MS = 60_000
+/** Fast fingerprint poll: cheap quick-status vs full snapshot on change. */
+const QUICK_POLL_MS = 5_000
 
 export class GitController {
   private view: GitView = { state: 'cold' }
@@ -28,6 +31,8 @@ export class GitController {
   private pendingRefresh = false
   private disposed = false
   private pollMs = DEFAULT_POLL_MS
+  private quickTimer: ReturnType<typeof setTimeout> | undefined
+  private quickBaseline: string | null = null
 
   constructor(
     private readonly remote: GitPanelRemote,
@@ -57,6 +62,7 @@ export class GitController {
         if (this.disposed) return
         if (result.ok) {
           this.pollMs = result.value.refreshIntervalMs || DEFAULT_POLL_MS
+          this.quickBaseline = quickFingerprint(result.value.branch, result.value.head, result.value.staged, result.value.modified, result.value.untracked, result.value.ahead, result.value.behind)
           this.setView({ state: 'ready', snapshot: result.value })
         } else if (result.error.code === 'cancelled') {
           // A caller-driven abort (navigation/reset) is not an error state:
@@ -99,6 +105,7 @@ export class GitController {
   accept(snapshot: GitSnapshot): void {
     if (this.disposed) return
     this.pollMs = snapshot.refreshIntervalMs || DEFAULT_POLL_MS
+    this.quickBaseline = quickFingerprint(snapshot.branch, snapshot.head, snapshot.staged, snapshot.modified, snapshot.untracked, snapshot.ahead, snapshot.behind)
     this.setView({ state: 'ready', snapshot })
     this.schedulePoll()
   }
@@ -110,6 +117,40 @@ export class GitController {
     this.timer = setTimeout(() => { void this.refresh() }, this.pollMs)
   }
 
+  /** Fast loop: cheap fingerprint check; a move triggers a full refresh. */
+  startQuickPoll(): void {
+    if (this.disposed || this.quickTimer !== undefined) return
+    const tick = (): void => {
+      if (this.disposed) return
+      void this.checkQuick().finally(() => {
+        if (!this.disposed) this.quickTimer = setTimeout(tick, QUICK_POLL_MS)
+      })
+    }
+    this.quickTimer = setTimeout(tick, QUICK_POLL_MS)
+  }
+
+  stopQuickPoll(): void {
+    if (this.quickTimer !== undefined) clearTimeout(this.quickTimer)
+    this.quickTimer = undefined
+  }
+
+  private async checkQuick(): Promise<void> {
+    if (this.view.state !== 'ready' || this.inflight !== undefined) return
+    const res = await this.remote.query({ sessionId: this.sessionId, query: { kind: 'quick-status' } })
+    if (this.disposed) return
+    const qs = queryAs(res, 'quick-status')
+    if (qs === null) return
+    const fp = quickFingerprint(qs.branch, qs.head, qs.staged, qs.modified, qs.untracked, qs.ahead, qs.behind)
+    if (this.quickBaseline === null) {
+      this.quickBaseline = fp
+      return
+    }
+    if (fp !== this.quickBaseline) {
+      this.quickBaseline = fp
+      await this.refresh()
+    }
+  }
+
   private setView(view: GitView): void {
     this.view = view
     for (const listener of this.listeners) listener()
@@ -119,6 +160,14 @@ export class GitController {
     this.disposed = true
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
+    this.stopQuickPoll()
     this.listeners.clear()
   }
+}
+
+export function quickFingerprint(
+  branch: string | null, head: string | null,
+  staged: number, modified: number, untracked: number, ahead: number, behind: number,
+): string {
+  return `${branch ?? ''}|${head ?? ''}|${staged}|${modified}|${untracked}|${ahead}|${behind}`
 }

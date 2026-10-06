@@ -44,6 +44,7 @@ function release(sessionId: string): void {
   const next = (refCounts.get(sessionId) ?? 1) - 1
   if (next > 0) { refCounts.set(sessionId, next); return }
   refCounts.delete(sessionId)
+  controllers.get(sessionId)?.stopQuickPoll()
   const timer = setTimeout(() => {
     idleTimers.delete(sessionId)
     if ((refCounts.get(sessionId) ?? 0) > 0) return
@@ -80,6 +81,7 @@ export function useGitView(sessionId: string | undefined): GitView {
     retain(sessionId)
     const unsub = controller.subscribe(() => forceRender((n) => n + 1))
     controller.ensure()
+    controller.startQuickPoll()
     return () => { unsub(); release(sessionId) }
   }, [controller, sessionId])
   return controller ? controller.getSnapshot() : { state: 'cold' }

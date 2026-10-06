@@ -56,3 +56,14 @@ export declare function sumNumstat(stdout: string): {
  * one line per entry, NUL-separated fields. Failure yields [] upstream.
  */
 export declare function parseStashList(stdout: string): StashEntry[];
+export interface BranchHeader {
+    readonly branch: string | null;
+    readonly ahead: number;
+    readonly behind: number;
+}
+/**
+ * Parse the `## ...` lead field of `git status -b --porcelain=v1 -z`:
+ * `## main...origin/main [ahead 2]`, `## main`, `## HEAD (no branch)`,
+ * `## No commits yet on main`. Detached covers rebase/bisect variants.
+ */
+export declare function parseBranchHeader(field: string): BranchHeader;

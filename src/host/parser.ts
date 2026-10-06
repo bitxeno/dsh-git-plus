@@ -264,3 +264,39 @@ export function parseStashList(stdout: string): StashEntry[] {
   }
   return out
 }
+
+export interface BranchHeader {
+  readonly branch: string | null
+  readonly ahead: number
+  readonly behind: number
+}
+
+/**
+ * Parse the `## ...` lead field of `git status -b --porcelain=v1 -z`:
+ * `## main...origin/main [ahead 2]`, `## main`, `## HEAD (no branch)`,
+ * `## No commits yet on main`. Detached covers rebase/bisect variants.
+ */
+export function parseBranchHeader(field: string): BranchHeader {
+  const label = field.startsWith('## ') ? field.slice(3) : field
+  if (label === 'HEAD (no branch)' || label.startsWith('HEAD (no branch,')) {
+    return { branch: null, ahead: 0, behind: 0 }
+  }
+  let name = label
+  let rest = ''
+  const bracket = name.indexOf(' [')
+  if (bracket >= 0) {
+    rest = name.slice(bracket + 1)
+    name = name.slice(0, bracket)
+  }
+  const noCommits = 'No commits yet on '
+  if (name.startsWith(noCommits)) name = name.slice(noCommits.length)
+  const dots = name.indexOf('...')
+  if (dots >= 0) name = name.slice(0, dots)
+  const ahead = /ahead (\d+)/.exec(rest)
+  const behind = /behind (\d+)/.exec(rest)
+  return {
+    branch: name === '' ? null : name,
+    ahead: ahead ? Number(ahead[1]) : 0,
+    behind: behind ? Number(behind[1]) : 0,
+  }
+}
