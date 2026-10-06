@@ -13,6 +13,7 @@ import type { GitKey } from './locales'
 import type { SubTab } from './jump'
 import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
+import { Tip } from './Tip'
 
 export interface SidebarSelection {
   readonly view: SubTab
@@ -206,15 +207,27 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       }, t('side.commits')),
     ]),
     h('div', { key: 'net', className: 'gp-side__net' }, [
-      h('button', { key: 'fetch', type: 'button', title: t('side.fetch'), onClick: () => onOpenModal('fetch') }, h(FetchIcon, { size: 15 })),
-      h('button', { key: 'pull', type: 'button', title: t('side.pull'), onClick: () => onOpenModal('pull') }, h(PullIcon, { size: 15 })),
-      h('button', { key: 'push', type: 'button', title: t('side.push'), onClick: () => onOpenModal('push') }, h(PushIcon, { size: 15 })),
+      h(Tip, {
+        key: 'fetch', label: t('side.fetch'),
+        children: h('button', { type: 'button', onClick: () => onOpenModal('fetch') }, h(FetchIcon, { size: 15 })),
+      }),
+      h(Tip, {
+        key: 'pull', label: t('side.pull'),
+        children: h('button', { type: 'button', onClick: () => onOpenModal('pull') }, h(PullIcon, { size: 15 })),
+      }),
+      h(Tip, {
+        key: 'push', label: t('side.push'),
+        children: h('button', { type: 'button', onClick: () => onOpenModal('push') }, h(PushIcon, { size: 15 })),
+      }),
     ]),
     error ? h('div', { key: 'err', className: 'gp-side__error' }, t('overview.branchesError')) : null,
     h(Group, {
       key: 'branches', title: t('side.branches'), count: local.length, open: !closed.has('branches'),
       onToggle: () => toggleClosed('branches'),
-      actions: h('button', { type: 'button', title: t('side.refresh'), onClick: () => setReloadSeq((n) => n + 1) }, h(RefreshIcon, { size: 15 })),
+      actions: h(Tip, {
+        label: t('side.refresh'),
+        children: h('button', { type: 'button', onClick: () => setReloadSeq((n) => n + 1) }, h(RefreshIcon, { size: 15 })),
+      }),
       children: branchRows,
     }),
     h(Group, {
@@ -297,16 +310,28 @@ function renderStashRow(
   cb: { readonly onArm: () => void; readonly onDrop: () => void },
 ): JSX.Element {
   return h('div', { key: `s-${s.index}`, className: 'gp-branch-row', title: s.message }, [
-    h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
-    h('span', { key: 'n', className: 'gp-tree-name' }, `stash@{${s.index}} ${s.message}`),
-    h('span', { key: 'ops', className: 'gp-side__ops' }, [
-      h('button', { key: 'ap', type: 'button', title: t('side.apply'), onClick: () => void run({ kind: 'stash-apply', index: s.index }) }, '⤓'),
-      h('button', { key: 'pp', type: 'button', title: t('side.pop'), onClick: () => void run({ kind: 'stash-pop', index: s.index }) }, '⤒'),
-      armed
-        ? h('button', { key: 'dr2', type: 'button', className: 'gp-side__danger', title: t('side.drop'), onClick: cb.onDrop }, '✓')
-        : h('button', { key: 'dr', type: 'button', title: t('side.drop'), onClick: cb.onArm }, '×'),
-    ]),
-  ])
+      h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
+      h('span', { key: 'n', className: 'gp-tree-name' }, `stash@{${s.index}} ${s.message}`),
+      h('span', { key: 'ops', className: 'gp-side__ops' }, [
+        h(Tip, {
+          key: 'ap', label: t('side.apply'),
+          children: h('button', { type: 'button', onClick: () => void run({ kind: 'stash-apply', index: s.index }) }, '⤓'),
+        }),
+        h(Tip, {
+          key: 'pp', label: t('side.pop'),
+          children: h('button', { type: 'button', onClick: () => void run({ kind: 'stash-pop', index: s.index }) }, '⤒'),
+        }),
+        armed
+          ? h(Tip, {
+            key: 'dr2', label: t('side.drop'),
+            children: h('button', { type: 'button', className: 'gp-side__danger', onClick: cb.onDrop }, '✓'),
+          })
+          : h(Tip, {
+            key: 'dr', label: t('side.drop'),
+            children: h('button', { type: 'button', onClick: cb.onArm }, '×'),
+          }),
+      ]),
+    ])
 }
 
 function Group(props: {

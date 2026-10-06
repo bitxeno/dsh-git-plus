@@ -1,11 +1,12 @@
 /**
- * Minimal ambient surface for the platform's Markdown and code highlighter.
+ * Minimal ambient surface for the platform's UI primitives.
  * @deepseek-ai/dsh-client-ui-primitives is a web-shell platform seed listed
  * in package.json `dsh.client.inject`, external to the plugin bundle. These
- * declarations mirror its public MarkdownText and code-highlighting types.
+ * declarations mirror its public MarkdownText, code-highlighting and Tooltip
+ * types.
  */
 declare module '@deepseek-ai/dsh-client-ui-primitives' {
-  import type { JSX } from 'react'
+  import type { JSX, ReactElement } from 'react'
 
   export interface MarkdownCodeLabels {
     copyLabel: string
@@ -29,4 +30,16 @@ declare module '@deepseek-ai/dsh-client-ui-primitives' {
     variant?: 'body' | 'compact'
     streaming?: boolean
   }) => JSX.Element
+  export type TooltipSide = 'right' | 'bottom' | 'top'
+  export function Tooltip(props: {
+    label: string | (() => string)
+    side?: TooltipSide
+    align?: 'center' | 'end'
+    delayMs?: number
+    gap?: number
+    disabled?: boolean
+    portal?: boolean
+    maxWidth?: number
+    children: ReactElement
+  }): JSX.Element
 }

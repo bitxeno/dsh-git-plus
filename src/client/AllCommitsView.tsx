@@ -22,6 +22,7 @@ import { absoluteDateTime, absoluteTime, timeAgo } from './time'
 import { statusChar, statusClass } from './status'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
 import { ContextMenu, copyText } from './ContextMenu'
+import { Tip } from './Tip'
 import { useBranchTree, useCommitDetail, useHistory, type HistoryFilter } from './overview-hooks'
 import { segButtons } from './seg'
 import type { DiffViewMode } from './types'
@@ -243,7 +244,10 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
         h('option', { key: '7d', value: '7 days ago' }, t('overview.last7d')),
         h('option', { key: '30d', value: '30 days ago' }, t('overview.last30d')),
       ]),
-      h('button', { key: 'fetch', type: 'button', className: 'gp-icon-btn', title: t('overview.fetch'), onClick: () => { void remote.run({ sessionId, action: { kind: 'fetch' } }).then(() => reloadTree()) } }, h(RefreshIcon, { size: 14 })),
+      h(Tip, {
+        key: 'fetch', label: t('overview.fetch'),
+        children: h('button', { type: 'button', className: 'gp-icon-btn', onClick: () => { void remote.run({ sessionId, action: { kind: 'fetch' } }).then(() => reloadTree()) } }, h(RefreshIcon, { size: 14 })),
+      }),
     ]),
     // top: commit graph list (one overlay SVG + flat rows, git-graph-plus style)
     fullscreen ? null : h('div', { key: 'graph', className: 'ggp-graph' },
@@ -302,11 +306,17 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
           }, `${t('details.changes')} (${detail.detail?.stats.length ?? 0})`),
         ]),
         h('span', { key: 'sp', className: 'ggp-bottom__spacer' }),
-        h('button', {
-          key: 'fs', type: 'button', className: 'gp-icon-btn', title: fullscreen ? t('details.restore') : t('details.fullscreen'),
-          onClick: () => setFullscreen((v) => !v),
-        }, fullscreen ? '▾' : '▴'),
-        h('button', { key: 'x', type: 'button', className: 'gp-icon-btn', title: t('common.close'), onClick: closeBottom }, h(CloseIcon, { size: 14 })),
+        h(Tip, {
+          key: 'fs', label: fullscreen ? t('details.restore') : t('details.fullscreen'),
+          children: h('button', {
+            type: 'button', className: 'gp-icon-btn',
+            onClick: () => setFullscreen((v) => !v),
+          }, fullscreen ? '▾' : '▴'),
+        }),
+        h(Tip, {
+          key: 'x', label: t('common.close'),
+          children: h('button', { type: 'button', className: 'gp-icon-btn', onClick: closeBottom }, h(CloseIcon, { size: 14 })),
+        }),
       ]),
       h('div', { key: 'body', className: 'ggp-bottom__body' },
         bottomTab === 'commit' && selected !== null
@@ -477,7 +487,7 @@ function renderPlusRow(commit: GraphCommit, cb: PlusRowCbs): JSX.Element {
     .map((r) => {
       const isHead = r.head
       const isTag = r.kind === 'tag'
-      const text = r.kind === 'remote' ? r.name : r.name
+      const text = r.name
       return h('span', {
         key: `${r.kind}:${r.name}`,
         className: `gp-ref-badge${isHead ? ' gp-ref-badge--head' : ''}${isTag ? ' gp-ref-badge--fixed' : ''}`,
@@ -502,7 +512,7 @@ function renderPlusRow(commit: GraphCommit, cb: PlusRowCbs): JSX.Element {
       h('span', { key: 's', className: 'ggp-subject' }, commit.subject),
     ]),
     h('div', { key: 'a', className: 'gp-commit-author' }, commit.author),
-    h('div', { key: 'h', className: 'gp-commit-hash' }, commit.shortHash),
+    h('div', { key: 'h', className: 'gp-commit-hash', title: commit.hash }, commit.shortHash),
     h('div', { key: 'd', className: 'gp-commit-date', title: absoluteTime(commit.dateIso) }, timeAgo(commit.dateIso, cb.now, cb.t)),
   ])
 }
@@ -583,7 +593,10 @@ function renderFileDiffModal(
       }, t(expanded ? 'diff.collapse' : 'diff.expandAll')),
       h('div', { key: 'seg', className: 'gp-seg' },
         segButtons<DiffMode>(['unified', 'split', 'before', 'after'], mode, onMode, (m) => t(`diff.${m}` as GitKey))),
-      h('button', { key: 'close', type: 'button', className: 'gp-icon-btn gp-modal__close', title: t('common.close'), onClick: onClose }, h(CloseIcon, { size: 15 })),
+      h(Tip, {
+        key: 'close', label: t('common.close'),
+        children: h('button', { type: 'button', className: 'gp-icon-btn gp-modal__close', onClick: onClose }, h(CloseIcon, { size: 15 })),
+      }),
     ]),
     h('div', { key: 'scroll', className: 'gp-modal__scroll' },
       text === null

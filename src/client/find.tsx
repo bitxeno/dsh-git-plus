@@ -7,6 +7,7 @@ import { createElement as h, useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import type { HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitKey } from './locales'
+import { Tip } from './Tip'
 
 type T = (key: GitKey, params?: Record<string, string | number>) => string
 
@@ -140,8 +141,17 @@ export function FindBar(p: FindBarProps): JSX.Element {
     }, 'Aa'),
     h('span', { key: 'cnt', className: 'gp-find__count' },
       p.query === '' ? '' : p.matches === 0 ? p.t('files.findNoMatch') : `${p.active + 1}/${p.matches}`),
-    h('button', { key: 'prev', type: 'button', className: 'gp-find__btn', title: p.t('files.findPrev'), 'aria-label': p.t('files.findPrev'), disabled: p.matches === 0, onClick: () => p.onStep(-1) }, '\u2039'),
-    h('button', { key: 'next', type: 'button', className: 'gp-find__btn', title: p.t('files.findNext'), 'aria-label': p.t('files.findNext'), disabled: p.matches === 0, onClick: () => p.onStep(1) }, '\u203a'),
-    h('button', { key: 'x', type: 'button', className: 'gp-find__btn', title: p.t('files.findClose'), 'aria-label': p.t('files.findClose'), onClick: () => p.onClose() }, '\u2715'),
+    h(Tip, {
+      key: 'prev', label: p.t('files.findPrev'),
+      children: h('button', { type: 'button', className: 'gp-find__btn', 'aria-label': p.t('files.findPrev'), disabled: p.matches === 0, onClick: () => p.onStep(-1) }, '\u2039'),
+    }),
+    h(Tip, {
+      key: 'next', label: p.t('files.findNext'),
+      children: h('button', { type: 'button', className: 'gp-find__btn', 'aria-label': p.t('files.findNext'), disabled: p.matches === 0, onClick: () => p.onStep(1) }, '\u203a'),
+    }),
+    h(Tip, {
+      key: 'x', label: p.t('files.findClose'),
+      children: h('button', { type: 'button', className: 'gp-find__btn', 'aria-label': p.t('files.findClose'), onClick: () => p.onClose() }, '\u2715'),
+    }),
   ])
 }

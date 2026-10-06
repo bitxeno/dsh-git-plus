@@ -12,6 +12,7 @@ import { ChangeStats } from './ChangeStats'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
 import { ChevronIcon, FolderIcon } from './icons'
 import { buildFileTree, type FileTreeNode } from './file-tree'
+import { Tip } from './Tip'
 import { statusChar, statusClass } from './status'
 import { useResizableColumn } from './resizable'
 import { segButtons } from './seg'
@@ -193,28 +194,30 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
           className: `gp-tdir${activeDir === dirKey ? ' gp-tdir--active' : ''}`,
           style: { paddingLeft: 10 + depth * 16 },
           title: node.path,
-          onClick: () => {
-            setActiveDir((prev) => (prev === dirKey ? null : dirKey))
-            setDiffPath(null)
-            setDiffText(null)
-          },
-          onDoubleClick: () => stagePaths(paths, stagedSide),
-        }, [
-          h('span', {
-            key: 'c', className: 'gp-tdir__chev',
-            onClick: (e: Event) => { e.stopPropagation(); toggleDir(dirKey) },
-          }, h(ChevronIcon, { size: 11, open })),
-          h('span', { key: 'i', className: 'gp-folder' }, h(FolderIcon, { size: 14 })),
-          h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
-          h('span', { key: 'act', className: 'gp-tdir__actions' }, [
-            h('button', {
-              key: 's', type: 'button', className: 'gp-icon-btn',
-              title: stagedSide ? t('changes.unstage') : t('changes.stage'),
-              disabled: busy || paths.length === 0,
-              onClick: (e: Event) => { e.stopPropagation(); stagePaths(paths, stagedSide) },
-            }, stagedSide ? '−' : '+'),
-          ]),
-        ]))
+            onClick: () => {
+              setActiveDir((prev) => (prev === dirKey ? null : dirKey))
+              setDiffPath(null)
+              setDiffText(null)
+            },
+            onDoubleClick: () => stagePaths(paths, stagedSide),
+          }, [
+            h('span', {
+              key: 'c', className: 'gp-tdir__chev',
+              onClick: (e: Event) => { e.stopPropagation(); toggleDir(dirKey) },
+            }, h(ChevronIcon, { size: 11, open })),
+            h('span', { key: 'i', className: 'gp-folder' }, h(FolderIcon, { size: 14 })),
+            h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
+            h('span', { key: 'act', className: 'gp-tdir__actions' }, [
+              h(Tip, {
+                key: 's', label: stagedSide ? t('changes.unstage') : t('changes.stage'),
+                children: h('button', {
+                  type: 'button', className: 'gp-icon-btn',
+                  disabled: busy || paths.length === 0,
+                  onClick: (e: Event) => { e.stopPropagation(); stagePaths(paths, stagedSide) },
+                }, stagedSide ? '−' : '+'),
+              }),
+            ]),
+          ]))
         if (open) out.push(...renderTree(node.children, depth + 1, stagedSide))
       } else {
         const c = node.meta as GitChange
@@ -346,14 +349,21 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
     key: c.path + (c.staged ? ':s' : ':w'),
     className: `gp-file-row${a.active ? ' gp-file-row--active' : ''}`,
     style: { paddingLeft: 10 + a.depth * 16 },
+    title: c.path,
     onClick: a.onOpen,
     onDoubleClick: () => a.onStage(),
   }, [
     h('span', { key: 'st', className: `gp-status-badge ${statusClass(c.status)}` }, statusChar[c.status] ?? '?'),
-    h('span', { key: 'nm', className: 'gp-tree-name', title: c.path }, name),
+    h('span', { key: 'nm', className: 'gp-tree-name' }, name),
     h('span', { key: 'act', className: 'gp-file-row__actions' }, [
-      h('button', { key: 'stg', type: 'button', className: 'gp-icon-btn', title: c.staged ? a.t('changes.unstage') : a.t('changes.stage'), disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onStage() } }, c.staged ? '\u2212' : '+'),
-      h('button', { key: 'dis', type: 'button', className: 'gp-icon-btn', title: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'), style: a.armed ? { color: 'var(--dsw-alias-state-error-primary)' } : {}, disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onDiscard() } }, '\u21ba'),
+      h(Tip, {
+        key: 'stg', label: c.staged ? a.t('changes.unstage') : a.t('changes.stage'),
+        children: h('button', { type: 'button', className: 'gp-icon-btn', disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onStage() } }, c.staged ? '−' : '+'),
+      }),
+      h(Tip, {
+        key: 'dis', label: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'),
+        children: h('button', { type: 'button', className: 'gp-icon-btn', style: a.armed ? { color: 'var(--dsw-alias-state-error-primary)' } : {}, disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onDiscard() } }, '↺'),
+      }),
     ]),
   ])
 }
