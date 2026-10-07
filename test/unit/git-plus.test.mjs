@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -156,10 +156,21 @@ describe('planAction git-plus', () => {
     const w = planAction({ kind: 'worktree-add', path: '/tmp/x' }, false)
     assert.ok('error' in w && w.error === 'not-implemented')
   })
-  it('plans merge-abort/continue', () => {
-    assert.ok('argv' in planAction({ kind: 'merge-abort' }, false))
-    const c = planAction({ kind: 'merge-continue' }, false)
-    assert.ok('argv' in c && c.argv.length === 2)
+  it('routes merge-continue/abort planning through runAction', () => {
+    assert.ok('error' in planAction({ kind: 'merge-abort' }, false))
+    assert.ok('error' in planAction({ kind: 'merge-continue' }, false))
+  })
+  it('plans continue/abort per operation kind', () => {
+    assert.deepEqual(planContinueAbort('merge-continue', 'merge').argv, [['git', 'add', '-A'], ['git', 'commit', '--no-edit']])
+    assert.deepEqual(planContinueAbort('merge-continue', 'rebase').argv, [['git', 'add', '-A'], ['git', 'rebase', '--continue']])
+    assert.deepEqual(planContinueAbort('merge-continue', 'cherry-pick').argv, [['git', 'add', '-A'], ['git', 'cherry-pick', '--continue']])
+    assert.deepEqual(planContinueAbort('merge-continue', 'revert').argv, [['git', 'add', '-A'], ['git', 'revert', '--continue']])
+    assert.deepEqual(planContinueAbort('merge-continue', null).argv, [['git', 'add', '-A']])
+    assert.deepEqual(planContinueAbort('merge-abort', 'merge').argv, [['git', 'merge', '--abort']])
+    assert.deepEqual(planContinueAbort('merge-abort', 'rebase').argv, [['git', 'rebase', '--abort']])
+    assert.deepEqual(planContinueAbort('merge-abort', 'cherry-pick').argv, [['git', 'cherry-pick', '--abort']])
+    assert.deepEqual(planContinueAbort('merge-abort', 'revert').argv, [['git', 'revert', '--abort']])
+    assert.ok('error' in planContinueAbort('merge-abort', null))
   })
 })
 

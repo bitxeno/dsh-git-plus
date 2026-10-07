@@ -5,8 +5,9 @@
 import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
+import { detectOperation } from './queries.ts'
 import { isSafeBranchName, isSafeIgnorePattern, isSafePath, isSafeRev } from './validate.ts'
-import type { GitAction, GitActionRequest, GitActionResult, GitErrorCode } from './types.ts'
+import type { GitAction, GitActionRequest, GitActionResult, GitErrorCode, GitOperationKind } from './types.ts'
 
 export { isSafePath }
 
@@ -174,11 +175,10 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       return { argv }
     }
     case 'merge-abort':
-      return { argv: [['git', 'merge', '--abort']] }
-    case 'merge-continue': {
-      // Stage everything then commit the merge (matches continueOperation).
-      return { argv: [['git', 'add', '-A'], ['git', 'commit', '--no-edit']] }
-    }
+    case 'merge-continue':
+      // Resolved in runAction (needs the live operation kind); reaching the
+      // planner with them is a programming error.
+      return { error: 'git-error', message: `${action.kind} is planned in runAction` }
     case 'stash-save': {
       const args = ['git', 'stash', 'push']
       if (action.message !== undefined && action.message !== '') args.push('-m', action.message)
@@ -207,6 +207,31 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
     case 'worktree-add':
       return { error: 'not-implemented', message: `${action.kind} is planned for V2` }
   }
+}
+
+/**
+ * Continue/abort command plan for an in-progress operation (mirrors the
+ * reference `continueOperation`/`abortOperation` dispatch). Continue always
+ * stages resolved files first; without an operation marker there is nothing
+ * to finalize, so continue degrades to staging while abort reports an error.
+ */
+export function planContinueAbort(
+  kind: 'merge-continue' | 'merge-abort',
+  op: GitOperationKind | null,
+): PlanResult {
+  if (kind === 'merge-continue') {
+    const step = (cmd: string): string[] => ['git', cmd, '--continue']
+    if (op === 'rebase') return { argv: [['git', 'add', '-A'], step('rebase')] }
+    if (op === 'cherry-pick') return { argv: [['git', 'add', '-A'], step('cherry-pick')] }
+    if (op === 'revert') return { argv: [['git', 'add', '-A'], step('revert')] }
+    if (op === null) return { argv: [['git', 'add', '-A']] }
+    return { argv: [['git', 'add', '-A'], ['git', 'commit', '--no-edit']] }
+  }
+  if (op === 'rebase') return { argv: [['git', 'rebase', '--abort']] }
+  if (op === 'cherry-pick') return { argv: [['git', 'cherry-pick', '--abort']] }
+  if (op === 'revert') return { argv: [['git', 'revert', '--abort']] }
+  if (op === null) return { error: 'git-error', message: 'no merge, rebase, cherry-pick or revert in progress' }
+  return { argv: [['git', 'merge', '--abort']] }
 }
 
 /** Default push target: `origin` when present, else the first configured
@@ -263,7 +288,11 @@ export async function runAction(
     action = { ...action, pushRemote: remote }
   }
 
-  const plan = planAction(action, unborn)
+  // Continue/abort dispatch on the live operation kind (merge / rebase /
+  // cherry-pick / revert); a static plan cannot know which one is running.
+  const plan = action.kind === 'merge-continue' || action.kind === 'merge-abort'
+    ? planContinueAbort(action.kind, (await detectOperation(deps, root))?.kind ?? null)
+    : planAction(action, unborn)
   if ('error' in plan) return { ok: false, error: { code: plan.error, ...(plan.message ? { message: plan.message } : {}) } }
 
   let lastOutput = ''
