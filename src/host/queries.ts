@@ -61,6 +61,7 @@ export async function runQuery(
       case 'conflicts': return await queryConflicts(deps, root)
       case 'operation-state': return await queryOperationState(deps, root)
       case 'remote-url': return await queryRemoteUrl(deps, root)
+      case 'patch': return await queryPatch(deps, root, q)
       case 'quick-status': return await queryQuickStatus(deps, root)
       case 'github-avatars': return await queryGithubAvatars(deps, root, q)
     }
@@ -635,6 +636,62 @@ async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQuer
   if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
   const url = res.run.exitCode === 0 ? res.run.stdout.trim() : ''
   return { ok: true, value: { kind: 'remote-url', url } }
+}
+
+// Patch export limits: a patch file is a download, so bound both sides.
+const MAX_PATCH_FILES = 200
+const MAX_PATCH_BYTES = 512 * 1024
+
+/**
+ * Combined unified patch for paths: `git diff HEAD` covers staged + unstaged
+ * tracked changes in one run (untracked paths are silently skipped there), and
+ * untracked files are appended one by one via `--no-index` against /dev/null
+ * (`--no-index` cannot take directories, so they are expanded first with
+ * `ls-files --others`).
+ */
+async function queryPatch(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'patch' }>,
+): Promise<GitQueryResponse> {
+  const paths = [...new Set(q.paths)].filter((p) => p !== '')
+  if (paths.length === 0 || paths.length > MAX_PATCH_FILES) {
+    return { ok: false, error: { code: 'invalid-path', message: 'bad path count' } }
+  }
+  for (const path of paths) {
+    if (!isSafePath(path)) return { ok: false, error: { code: 'invalid-path', message: `unsafe path: ${path}` } }
+  }
+  const parts: string[] = []
+  let bytes = 0
+  let truncated = false
+  const push = (text: string): void => {
+    if (text === '' || truncated) return
+    if (bytes + text.length > MAX_PATCH_BYTES) {
+      truncated = true
+      return
+    }
+    parts.push(text)
+    bytes += text.length
+  }
+  const tracked = await runCommand(deps.run, ['git', 'diff', 'HEAD', '--', ...paths], root, 'patch-tracked', deps.signal)
+  if (!('run' in tracked)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (tracked.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (tracked.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (tracked.run.exitCode === 0) push(tracked.run.stdout)
+  const others = await runCommand(
+    deps.run, ['git', 'ls-files', '--others', '--exclude-standard', '-z', '--', ...paths],
+    root, 'patch-untracked', deps.signal,
+  )
+  if ('run' in others && others.run.exitCode === 0) {
+    const files = others.run.stdout.split('\0').map((s) => s.trim()).filter((s) => s !== '').slice(0, MAX_PATCH_FILES)
+    for (const file of files) {
+      if (truncated) break
+      const one = await runCommand(deps.run, ['git', 'diff', '--no-index', '--', '/dev/null', file], root, 'patch-new-file', deps.signal)
+      // --no-index exits 1 when a diff exists; that is the success path here.
+      if ('run' in one && (one.run.exitCode === 0 || one.run.exitCode === 1)) push(one.run.stdout)
+    }
+  }
+  return { ok: true, value: { kind: 'patch', text: parts.join(''), truncated } }
 }
 
 /**

@@ -188,6 +188,7 @@ export type GitAction = {
     readonly message?: string;
     readonly includeUntracked?: boolean;
     readonly keepIndex?: boolean;
+    readonly paths?: readonly string[];
 } | {
     readonly kind: 'stash-apply';
     readonly index: number;
@@ -197,6 +198,9 @@ export type GitAction = {
 } | {
     readonly kind: 'stash-drop';
     readonly index: number;
+} | {
+    readonly kind: 'ignore';
+    readonly patterns: readonly string[];
 } | {
     readonly kind: 'rebase';
     readonly onto: string;
@@ -294,6 +298,9 @@ export type GitQuery = {
     readonly kind: 'operation-state';
 } | {
     readonly kind: 'remote-url';
+} | {
+    readonly kind: 'patch';
+    readonly paths: readonly string[];
 } | {
     readonly kind: 'quick-status';
 } | {
@@ -408,6 +415,10 @@ export type GitQueryResult = {
 } | {
     readonly kind: 'remote-url';
     readonly url: string;
+} | {
+    readonly kind: 'patch';
+    readonly text: string;
+    readonly truncated: boolean;
 } | {
     readonly kind: 'github-avatars';
     readonly avatars: readonly {

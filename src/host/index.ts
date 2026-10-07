@@ -9,7 +9,7 @@
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { createGitRunner, type SubprocessLike } from './git.ts'
 import { normalizeConfig, snapshotForSession, type GitPanelConfig, type SnapshotDeps } from './core.ts'
 import { runAction } from './actions.ts'
@@ -76,7 +76,9 @@ export class GitPanelService extends TypertRemoteService {
     const fs: SnapshotDeps['fs'] = {
       realpath, stat: async (p) => stat(p), readFile,
       readdir: async (p) => (await readdir(p, { withFileTypes: true })).map((e) => ({ name: e.name, isDirectory: e.isDirectory() })),
-      remove: async (p) => { await rm(p, { force: true }) },
+      // Recursive so discarding an untracked directory removes the whole tree.
+      remove: async (p) => { await rm(p, { force: true, recursive: true }) },
+      writeFile: async (p, content) => { await writeFile(p, content, 'utf8') },
     }
     // `static inject` gates activation on subprocess, so it is always present
     // here; the runner throws only if a future refactor drops that guard.

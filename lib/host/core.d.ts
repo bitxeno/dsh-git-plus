@@ -41,6 +41,8 @@ export interface SnapshotDeps {
         }>>;
         /** Best-effort unlink (force) — temp-blob cleanup. */
         remove(path: string): Promise<void>;
+        /** Overwrite a small text file (UTF-8) — .gitignore maintenance. */
+        writeFile(path: string, content: string): Promise<void>;
     };
     readonly sessions: {
         liveCwd(sessionId: string): string | undefined;

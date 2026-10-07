@@ -34,3 +34,17 @@ export function isSafeRev(input: string): boolean {
 export function isSafeBranchName(name: string): boolean {
   return isSafeRev(name) && !name.startsWith('/')
 }
+
+// A .gitignore pattern is safe when it is a single line without control
+// characters that stays inside the work tree: no absolute paths, no `..`
+// segments (meaningless in a gitignore and a traversal smell). Leading
+// `#`/`!` (comment/negation) are rejected — the caller escapes them instead.
+export function isSafeIgnorePattern(pattern: string): boolean {
+  if (pattern === '' || pattern.length > 512) return false
+  if (/[\x00-\x1f\x7f]/.test(pattern)) return false
+  if (isAbsolute(pattern)) return false
+  const trimmed = pattern.trim()
+  if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('!')) return false
+  const segs = trimmed.split('/')
+  return !segs.some((s) => s === '..')
+}

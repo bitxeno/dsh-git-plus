@@ -32,7 +32,7 @@ type ModalState =
   | { kind: 'branch'; startPoint?: string }
   | { kind: 'tag'; ref?: string }
   | { kind: 'merge'; preset?: string }
-  | { kind: 'stash' }
+  | { kind: 'stash'; paths?: readonly string[]; includeUntracked?: boolean }
   | { kind: 'fetch' }
   | { kind: 'pull' }
   | { kind: 'push'; branch?: string; remote?: string }
@@ -141,7 +141,15 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         snapshot.operation !== null || (snapshot.conflictFiles?.length ?? 0) > 0
           ? h(ConflictBanner, { key: 'cf', remote, sessionId, onAction, t })
           : null,
-        h(ChangesTab, { key: `${sessionId}-local`, remote, sessionId, snapshot, onAction, t }),
+        h(ChangesTab, { key: `${sessionId}-local`, remote, sessionId, snapshot, onAction, t,
+          onStashPaths: (paths, includeUntracked) => setModal({ kind: 'stash', paths, includeUntracked }),
+          onDiscardPaths: (paths, count) => setModal({
+            kind: 'confirm',
+            title: t('menu.discardTitle'),
+            message: t('menu.discardMessage', { n: String(count) }),
+            action: { kind: 'discard', paths: [...paths] },
+          }),
+        }),
       ])) : null,
       showCommits || visited.current.views.has('commits') ? h('div', {
         key: 'commits', style: showCommits ? { display: 'contents' } : { display: 'none' },
@@ -215,7 +223,11 @@ interface ModalCtx {
 function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element {
   if (modal.kind === 'branch') return h(CreateBranchModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.startPoint !== undefined ? { startPoint: modal.startPoint } : {}) })
   if (modal.kind === 'tag') return h(CreateTagModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.ref !== undefined ? { initialRef: modal.ref } : {}) })
-  if (modal.kind === 'stash') return h(StashSaveModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'stash') return h(StashSaveModal, {
+    t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction,
+    ...(modal.paths !== undefined ? { paths: modal.paths } : {}),
+    ...(modal.includeUntracked === true ? { defaultUntracked: true } : {}),
+  })
   if (modal.kind === 'fetch') return h(FetchModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'pull') return h(PullModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'push') return h(PushModal, {

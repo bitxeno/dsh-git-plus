@@ -5,7 +5,7 @@
 import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
-import { isSafeBranchName, isSafePath, isSafeRev } from './validate.ts'
+import { isSafeBranchName, isSafeIgnorePattern, isSafePath, isSafeRev } from './validate.ts'
 import type { GitAction, GitActionRequest, GitActionResult, GitErrorCode } from './types.ts'
 
 export { isSafePath }
@@ -184,6 +184,12 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       if (action.message !== undefined && action.message !== '') args.push('-m', action.message)
       if (action.includeUntracked === true) args.push('--include-untracked')
       if (action.keepIndex === true) args.push('--keep-index')
+      if (action.paths !== undefined && action.paths.length > 0) {
+        for (const path of action.paths) {
+          if (!isSafePath(path)) return { error: 'invalid-path', message: `unsafe path: ${path}` }
+        }
+        args.push('--', ...action.paths)
+      }
       return { argv: [args] }
     }
     case 'stash-apply':
@@ -193,6 +199,10 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       const verb = action.kind === 'stash-apply' ? 'apply' : action.kind === 'stash-pop' ? 'pop' : 'drop'
       return { argv: [['git', 'stash', verb, `stash@{${action.index}}`]] }
     }
+    case 'ignore':
+      // Executed directly in runAction (a .gitignore file write, not a git
+      // command); reaching the planner with it is a programming error.
+      return { error: 'git-error', message: 'ignore has no command plan' }
     case 'rebase':
     case 'worktree-add':
       return { error: 'not-implemented', message: `${action.kind} is planned for V2` }
@@ -242,6 +252,9 @@ export async function runAction(
   // Push-after-create needs the remote resolved at execution time (origin,
   // else the first configured remote); the client never names a remote.
   let action = request.action
+  if (action.kind === 'ignore') {
+    return await appendGitignore(deps, config, root, request.sessionId, action.patterns)
+  }
   if (action.kind === 'create-tag' && action.push === true && action.pushRemote === undefined) {
     const remote = await resolvePushRemote(deps, root)
     if (remote === null) {
@@ -306,6 +319,48 @@ async function readConflictFiles(deps: SnapshotDeps, root: string): Promise<stri
   const res = await runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'conflicts', deps.signal)
   if (!('run' in res) || res.run.exitCode !== 0) return []
   return res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
+}
+
+/**
+ * Append ignore patterns to the work-tree `.gitignore` (created when absent),
+ * skipping lines that already exist. Returns the fresh snapshot on success.
+ */
+async function appendGitignore(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  root: string,
+  sessionId: string,
+  patterns: readonly string[],
+): Promise<GitActionResult> {
+  const trimmed = patterns.map((p) => p.trim()).filter((p) => p !== '')
+  if (trimmed.length === 0) return { ok: false, error: { code: 'invalid-path', message: 'no patterns given' } }
+  const unique = [...new Set(trimmed)]
+  for (const pattern of unique) {
+    if (!isSafeIgnorePattern(pattern)) return { ok: false, error: { code: 'invalid-path', message: `unsafe pattern: ${pattern}` } }
+  }
+  const ignorePath = join(root, '.gitignore')
+  let current = ''
+  try {
+    current = (await deps.fs.readFile(ignorePath)).toString('utf8')
+  } catch {
+    current = ''
+  }
+  const existing = new Set(current.split('\n').map((line) => line.trim()).filter((line) => line !== ''))
+  const fresh = unique.filter((p) => !existing.has(p))
+  if (fresh.length === 0) {
+    const snapshot = await snapshotForSession(deps, config, sessionId)
+    if (!snapshot.ok) return { ok: false, error: { code: 'git-error', message: 'snapshot after action failed' } }
+    return { ok: true, snapshot: snapshot.value, output: '' }
+  }
+  const prefix = current === '' || current.endsWith('\n') ? '' : '\n'
+  try {
+    await deps.fs.writeFile(ignorePath, `${current}${prefix}${fresh.join('\n')}\n`)
+  } catch (error) {
+    return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : 'write .gitignore failed' } }
+  }
+  const snapshot = await snapshotForSession(deps, config, sessionId)
+  if (!snapshot.ok) return { ok: false, error: { code: 'git-error', message: 'snapshot after action failed' } }
+  return { ok: true, snapshot: snapshot.value, output: fresh.join('\n') }
 }
 
 async function discardUntracked(

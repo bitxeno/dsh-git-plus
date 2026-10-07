@@ -16,18 +16,32 @@ import { Tip } from './Tip'
 import { statusChar, statusClass } from './status'
 import { useResizableColumn, useResizableRow } from './resizable'
 import { segButtons } from './seg'
+import { ContextMenu, type MenuItem } from './ContextMenu'
+import { ignorePatternForDir, ignorePatternsForFile } from './ignore-pattern'
 
 interface ChangesTabProps {
   readonly remote: GitPanelRemote
   readonly sessionId: string
   readonly snapshot: GitSnapshot
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
+  readonly onStashPaths: (paths: readonly string[], includeUntracked: boolean) => void
+  readonly onDiscardPaths: (paths: readonly string[], count: number) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
 type GroupKey = 'unstaged' | 'staged'
 
-export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: ChangesTabProps): JSX.Element {
+type ChangeMenuTarget =
+  | { readonly kind: 'file'; readonly change: GitChange }
+  | { readonly kind: 'dir'; readonly dir: string; readonly stagedSide: boolean; readonly leaves: readonly GitChange[] }
+
+interface ChangeMenuState {
+  readonly x: number
+  readonly y: number
+  readonly target: ChangeMenuTarget
+}
+
+export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths, onDiscardPaths, t }: ChangesTabProps): JSX.Element {
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -36,6 +50,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   const [closedDirs, setClosedDirs] = useState<ReadonlySet<string>>(new Set())
   const [activeDir, setActiveDir] = useState<string | null>(null)
   const [armedDiscard, setArmedDiscard] = useState<string | null>(null)
+  const [menu, setMenu] = useState<ChangeMenuState | null>(null)
   const [diffPath, setDiffPath] = useState<{ path: string; base: 'worktree' | 'staged' } | null>(null)
   const [diffText, setDiffText] = useState<string | null>(null)
   const [diffMode, setDiffMode] = useState<DiffMode>(() => snapshot.defaultDiffView)
@@ -150,6 +165,12 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
     return node.children.flatMap(collectLeafPaths)
   }
 
+  /** All change entries under a tree node (the node itself if a file). */
+  const collectLeafChanges = (node: FileTreeNode): GitChange[] => {
+    if (!node.dir) return [node.meta as GitChange]
+    return node.children.flatMap(collectLeafChanges)
+  }
+
   const findTreeNode = (nodes: readonly FileTreeNode[], path: string): FileTreeNode | null => {
     for (const node of nodes) {
       if (node.path === path) return node
@@ -200,6 +221,10 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
               setDiffText(null)
             },
             onDoubleClick: () => stagePaths(paths, stagedSide),
+            onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => {
+              e.preventDefault(); e.stopPropagation()
+              setMenu({ x: e.clientX, y: e.clientY, target: { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) } })
+            },
           }, [
             h('span', {
               key: 'c', className: 'gp-tdir__chev',
@@ -233,6 +258,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
             if (armedDiscard === rowKey) { void run({ kind: 'discard', paths: [c.path] }); setArmedDiscard(null) }
             else setArmedDiscard(rowKey)
           },
+          onMenu: (x, y) => setMenu({ x, y, target: { kind: 'file', change: c } }),
           t,
         }))
       }
@@ -275,6 +301,25 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   const showRowDivider = snapshot.changes.length > 0 && !unstagedClosed && !stagedClosed
   const unstagedFlex = unstagedClosed ? 'none' : stagedClosed ? '1 1 0' : `${1 - split.frac} 1 0`
   const stagedFlex = stagedClosed ? 'none' : unstagedClosed ? '1 1 0' : `${split.frac} 1 0`
+
+  const savePatch = async (paths: readonly string[]): Promise<void> => {
+    const res = await remote.query({ sessionId, query: { kind: 'patch', paths: [...paths] } })
+    const patch = queryAs(res, 'patch')
+    if (patch === null || patch.text === '') { setError(t('menu.patchEmpty')); return }
+    downloadTextFile('local-changes.patch', patch.text)
+    if (patch.truncated) setError(t('menu.patchTruncated'))
+  }
+
+  // Right-click menu for a file or folder row, grouped by function:
+  // stage | stash + patch | ignore patterns | discard (danger).
+  const menuItems: readonly MenuItem[] = menu === null ? [] : buildChangeMenuItems(menu.target, {
+    stage: (paths, stagedSide) => stagePaths(paths, stagedSide),
+    stash: (paths, includeUntracked) => onStashPaths(paths, includeUntracked),
+    patch: (paths) => void savePatch(paths),
+    ignore: (patterns) => void run({ kind: 'ignore', patterns: [...patterns] }),
+    discard: (paths, count) => onDiscardPaths(paths, count),
+    t,
+  })
 
   return h('div', { className: 'gp-changes' }, [
     // left
@@ -338,6 +383,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
           h('div', { key: 'scroll', className: 'gp-diff__scroll' },
             diffText === null ? h('div', { className: 'gp-empty' }, t('common.loading')) : h(DiffView, { text: diffText, mode: diffMode, path: diffPath.path, remote, sessionId, imageSpec: { base: diffPath.base }, t })),
         ])),
+    menu !== null ? h(ContextMenu, { key: 'menu', x: menu.x, y: menu.y, items: menuItems, onClose: () => setMenu(null) }) : null,
   ])
 }
 
@@ -353,6 +399,7 @@ interface RowActions {
   onOpen: () => void
   onStage: () => void
   onDiscard: () => void
+  onMenu: (x: number, y: number) => void
   t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
@@ -365,6 +412,7 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
     title: c.path,
     onClick: a.onOpen,
     onDoubleClick: () => a.onStage(),
+    onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); a.onMenu(e.clientX, e.clientY) },
   }, [
     h('span', { key: 'st', className: `gp-status-badge ${statusClass(c.status)}` }, statusChar[c.status] ?? '?'),
     h('span', { key: 'nm', className: 'gp-tree-name' }, name),
@@ -379,4 +427,88 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
       }),
     ]),
   ])
+}
+
+interface ChangeMenuCbs {
+  readonly stage: (paths: readonly string[], stagedSide: boolean) => void
+  readonly stash: (paths: readonly string[], includeUntracked: boolean) => void
+  readonly patch: (paths: readonly string[]) => void
+  readonly ignore: (patterns: readonly string[]) => void
+  readonly discard: (paths: readonly string[], count: number) => void
+  readonly t: (key: GitKey, params?: Record<string, string | number>) => string
+}
+
+/**
+ * Context menu items for a file or folder target, grouped by function with
+ * separators: stage | stash + patch | ignore patterns | discard (danger).
+ * Stash/patch hide for conflicted targets (git cannot stash unmerged paths);
+ * ignore only offers for untracked content.
+ */
+function buildChangeMenuItems(target: ChangeMenuTarget, cb: ChangeMenuCbs): MenuItem[] {
+  const changes = target.kind === 'file' ? [target.change] : [...target.leaves]
+  const paths = changes.map((c) => c.path)
+  const n = changes.length
+  const stagedSide = target.kind === 'file' ? target.change.staged : target.stagedSide
+  const hasConflicted = changes.some((c) => c.status === 'conflicted')
+  const hasUntracked = changes.some((c) => c.status === 'untracked')
+  const sep = (key: string): MenuItem => ({ key, separator: true })
+
+  const sections: MenuItem[][] = []
+  sections.push([{
+    key: 'stage',
+    label: stagedSide
+      ? (n === 1 ? cb.t('changes.unstage') : cb.t('menu.unstageFiles', { n }))
+      : (n === 1 ? cb.t('changes.stage') : cb.t('menu.stageFiles', { n })),
+    onSelect: () => cb.stage(paths, stagedSide),
+  }])
+  if (!hasConflicted) {
+    sections.push([
+      { key: 'stash', label: cb.t('menu.stashFiles', { n }), onSelect: () => cb.stash(paths, hasUntracked) },
+      { key: 'patch', label: cb.t('menu.savePatch'), onSelect: () => cb.patch(paths) },
+    ])
+  }
+  const ignoreItems: MenuItem[] = []
+  if (target.kind === 'file' && target.change.status === 'untracked') {
+    if (target.change.isDirectory) {
+      const pattern = ignorePatternForDir(target.change.path)
+      ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern }), onSelect: () => cb.ignore([pattern]) })
+    } else {
+      const { exact, ext } = ignorePatternsForFile(target.change.path)
+      ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern: exact }), onSelect: () => cb.ignore([exact]) })
+      if (ext !== undefined) {
+        ignoreItems.push({ key: 'ign-ext', label: cb.t('menu.ignoreExt', { ext: ext.slice(2) }), onSelect: () => cb.ignore([ext]) })
+      }
+    }
+  } else if (target.kind === 'dir' && hasUntracked) {
+    const pattern = ignorePatternForDir(target.dir)
+    ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern }), onSelect: () => cb.ignore([pattern]) })
+  }
+  if (ignoreItems.length > 0) sections.push(ignoreItems)
+  sections.push([{
+    key: 'discard',
+    label: n === 1 ? cb.t('changes.discard') : cb.t('menu.discardFiles', { n }),
+    danger: true,
+    onSelect: () => cb.discard(paths, n),
+  }])
+  const items: MenuItem[] = []
+  sections.forEach((section, i) => {
+    if (i > 0) items.push(sep(`s${i}`))
+    items.push(...section)
+  })
+  return items
+}
+
+/** Trigger a text-file download in the webview (used for patch export). */
+function downloadTextFile(filename: string, text: string): void {
+  try {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch { /* download unsupported — caller already surfaced content errors */ }
 }

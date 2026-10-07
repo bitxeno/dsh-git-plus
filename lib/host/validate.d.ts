@@ -8,3 +8,4 @@ export declare function isSafePath(path: string): boolean;
 export declare function isSafeRev(input: string): boolean;
 /** A branch name for `git checkout`: the ref rules plus no leading slash. */
 export declare function isSafeBranchName(name: string): boolean;
+export declare function isSafeIgnorePattern(pattern: string): boolean;

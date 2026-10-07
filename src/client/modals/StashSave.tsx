@@ -8,9 +8,13 @@ export function StashSaveModal(props: {
   readonly t: (key: GitKey) => string
   readonly onClose: () => void
   readonly onSubmit: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
+  /** Stash only these paths (whole work tree when absent). */
+  readonly paths?: readonly string[]
+  /** Pre-check "include untracked" (set when paths contain untracked files). */
+  readonly defaultUntracked?: boolean
 }): JSX.Element {
   const [message, setMessage] = useState('')
-  const [untracked, setUntracked] = useState(false)
+  const [untracked, setUntracked] = useState(props.defaultUntracked ?? false)
   const [keepIndex, setKeepIndex] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,6 +26,7 @@ export function StashSaveModal(props: {
       ...(message.trim() ? { message: message.trim() } : {}),
       ...(untracked ? { includeUntracked: true } : {}),
       ...(keepIndex ? { keepIndex: true } : {}),
+      ...(props.paths !== undefined && props.paths.length > 0 ? { paths: [...props.paths] } : {}),
     })
     setBusy(false)
     if (res.ok) props.onClose()
@@ -29,6 +34,10 @@ export function StashSaveModal(props: {
   }
   return h(ModalShell, {
     title: props.t('modal.stashSave'), onClose: props.onClose, children: [
+      props.paths !== undefined && props.paths.length > 0 ? h('div', { key: 'scope' }, [
+        h('div', { key: 'h', className: 'gp-modal__subject' }, props.t('modal.stashPathsHint')),
+        h('div', { key: 'n', className: 'gp-modal__subject', title: props.paths.join('\n') }, `${props.paths.length} files: ${props.paths.slice(0, 5).join(', ')}${props.paths.length > 5 ? ', …' : ''}`),
+      ]) : null,
       h(Field, {
         key: 'm', label: props.t('modal.message'), children:
           h('input', { type: 'text', value: message, onChange: (e: { target: { value: string } }) => setMessage(e.target.value) }),

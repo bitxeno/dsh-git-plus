@@ -175,10 +175,11 @@ export type GitAction =
   }
   | { readonly kind: 'merge-abort' }
   | { readonly kind: 'merge-continue' }
-  | { readonly kind: 'stash-save'; readonly message?: string; readonly includeUntracked?: boolean; readonly keepIndex?: boolean }
+  | { readonly kind: 'stash-save'; readonly message?: string; readonly includeUntracked?: boolean; readonly keepIndex?: boolean; readonly paths?: readonly string[] }
   | { readonly kind: 'stash-apply'; readonly index: number }
   | { readonly kind: 'stash-pop'; readonly index: number }
   | { readonly kind: 'stash-drop'; readonly index: number }
+  | { readonly kind: 'ignore'; readonly patterns: readonly string[] }
   // V2 stubs (typed now, rejected with not-implemented until V2):
   | { readonly kind: 'rebase'; readonly onto: string; readonly autostash?: boolean }
   | { readonly kind: 'worktree-add'; readonly path: string; readonly branch?: string; readonly newBranch?: string }
@@ -237,6 +238,7 @@ export type GitQuery =
   | { readonly kind: 'conflicts' }
   | { readonly kind: 'operation-state' }
   | { readonly kind: 'remote-url' }
+  | { readonly kind: 'patch'; readonly paths: readonly string[] }
   | { readonly kind: 'quick-status' }
   | { readonly kind: 'github-avatars'; readonly owner: string; readonly repo: string }
 
@@ -318,6 +320,7 @@ export type GitQueryResult =
   | { readonly kind: 'conflicts'; readonly files: readonly string[] }
   | { readonly kind: 'operation-state'; readonly operation: GitOperationState | null }
   | { readonly kind: 'remote-url'; readonly url: string }
+  | { readonly kind: 'patch'; readonly text: string; readonly truncated: boolean }
   | {
     readonly kind: 'github-avatars'
     readonly avatars: readonly { readonly sha: string; readonly url: string }[]

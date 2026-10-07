@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -94,6 +94,13 @@ describe('planAction git-plus', () => {
     const m4 = planAction({ kind: 'merge', branch: 'feature', squash: true }, false)
     assert.ok('argv' in m4 && m4.argv.length === 2)
   })
+  it('plans stash-save with paths after --', () => {
+    const r = planAction({ kind: 'stash-save', message: 'wip', paths: ['a.txt', 'sub/b.txt'] }, false)
+    assert.ok('argv' in r)
+    assert.deepEqual(r.argv, [['git', 'stash', 'push', '-m', 'wip', '--', 'a.txt', 'sub/b.txt']])
+    const bad = planAction({ kind: 'stash-save', paths: ['../evil'] }, false)
+    assert.ok('error' in bad && bad.error === 'invalid-path')
+  })
   it('plans stash-save/apply/pop/drop', () => {
     const s = planAction({ kind: 'stash-save', message: 'wip', includeUntracked: true }, false)
     assert.ok('argv' in s && s.argv[0].includes('--include-untracked'))
@@ -134,7 +141,7 @@ describe('planAction git-plus', () => {
   it('resolves the push remote from `git remote` output', async () => {
     const deps = {
       run: { run: async (argv) => ({ exitCode: 0, stdout: argv.includes('remote') ? 'upstream\norigin\n' : '', stderr: '', timedOut: false, cancelled: false, stdoutLossy: false }) },
-      fs: { realpath: async (p) => p, stat: async () => ({ mtimeMs: 0, size: 0 }), readFile: async () => Buffer.from(''), readdir: async () => [], remove: async () => {} },
+      fs: { realpath: async (p) => p, stat: async () => ({ mtimeMs: 0, size: 0 }), readFile: async () => Buffer.from(''), readdir: async () => [], remove: async () => {}, writeFile: async () => {} },
       sessions: { liveCwd: () => '/x', persistedMeta: async () => undefined },
     }
     assert.equal(await resolvePushRemote(deps, '/x'), 'origin')
@@ -153,6 +160,36 @@ describe('planAction git-plus', () => {
     assert.ok('argv' in planAction({ kind: 'merge-abort' }, false))
     const c = planAction({ kind: 'merge-continue' }, false)
     assert.ok('argv' in c && c.argv.length === 2)
+  })
+})
+
+describe('ignore patterns', () => {
+  it('validates gitignore patterns', () => {
+    assert.equal(isSafeIgnorePattern('logs/a.log'), true)
+    assert.equal(isSafeIgnorePattern('build/'), true)
+    assert.equal(isSafeIgnorePattern('*.log'), true)
+    assert.equal(isSafeIgnorePattern(''), false)
+    assert.equal(isSafeIgnorePattern('#comment'), false)
+    assert.equal(isSafeIgnorePattern('!neg'), false)
+    assert.equal(isSafeIgnorePattern('/abs'), false)
+    assert.equal(isSafeIgnorePattern('../up'), false)
+    assert.equal(isSafeIgnorePattern('a\nb'), false)
+  })
+  it('escapes comment/negation leaders', () => {
+    assert.equal(escapeIgnorePattern('#x'), '\\#x')
+    assert.equal(escapeIgnorePattern('!x'), '\\!x')
+    assert.equal(escapeIgnorePattern('a.log'), 'a.log')
+  })
+  it('derives exact and extension patterns for files', () => {
+    assert.deepEqual(ignorePatternsForFile('logs/a.log'), { exact: 'logs/a.log', ext: '*.log' })
+    assert.deepEqual(ignorePatternsForFile('TODO'), { exact: 'TODO' })
+    assert.deepEqual(ignorePatternsForFile('.env'), { exact: '.env' })
+    assert.equal(extensionPattern('a.TXT'), '*.TXT')
+    assert.equal(extensionPattern('noext'), undefined)
+  })
+  it('derives dir patterns with a trailing slash', () => {
+    assert.equal(ignorePatternForDir('dist'), 'dist/')
+    assert.equal(ignorePatternForDir('a/b/'), 'a/b/')
   })
 })
 
