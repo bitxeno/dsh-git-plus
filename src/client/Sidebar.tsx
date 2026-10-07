@@ -49,13 +49,16 @@ interface BranchTree {
 const CLOSED_KEY = 'gp.plus.sidebar.closed'
 const WIDTH_KEY = 'gp.plus.sidebar.width'
 
+/** Groups collapsed on first open; Branches stays expanded. */
+const DEFAULT_CLOSED = ['tags', 'stashes', 'remotes']
+
 function readClosed(): Set<string> {
   try {
     const raw = localStorage.getItem(CLOSED_KEY)
-    if (!raw) return new Set()
+    if (!raw) return new Set(DEFAULT_CLOSED)
     return new Set(JSON.parse(raw) as string[])
   } catch {
-    return new Set()
+    return new Set(DEFAULT_CLOSED)
   }
 }
 
