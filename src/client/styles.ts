@@ -205,6 +205,18 @@ const CSS = `
 .gp-files__image{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;align-items:center;justify-content:center;padding:16px;background-color:var(--dsw-alias-bg-layer-1);background-image:linear-gradient(45deg,color-mix(in srgb,var(--dsw-alias-label-primary) 5%,transparent) 25%,transparent 25%,transparent 50%,color-mix(in srgb,var(--dsw-alias-label-primary) 5%,transparent) 50%,color-mix(in srgb,var(--dsw-alias-label-primary) 5%,transparent) 75%,transparent 75%);background-size:16px 16px}
 .gp-files__image img{max-width:100%;max-height:100%;object-fit:contain}
 .gp-changes__list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 0}
+/* stacked change panes: unstaged (top) + staged (bottom), each with its own
+ * scroll body and a hover-only row divider between them. */
+.gp-changes__panes{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.gp-pane{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.gp-pane__body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 0}
+/* invisible-until-hover row divider: transparent by default (cursor still
+ * shows row-resize on hover), accent hairline + grip dots on hover/drag. */
+.gp-rowresizer{flex:0 0 7px;position:relative;cursor:row-resize;background:transparent;touch-action:none;user-select:none}
+.gp-rowresizer::before{content:"";position:absolute;left:0;right:0;top:3px;height:1px;background:transparent;transition:background .15s}
+.gp-rowresizer::after{content:"···";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:9px;letter-spacing:3px;line-height:1;color:transparent;transition:color .15s;pointer-events:none}
+.gp-rowresizer:hover::before,.gp-rowresizer:active::before{background:var(--dsw-alias-state-business-primary)}
+.gp-rowresizer:hover::after,.gp-rowresizer:active::after{color:var(--dsw-alias-state-business-primary)}
 .gp-check{width:14px;height:14px;flex:none;cursor:pointer}
 .gp-group-head{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11px;color:var(--dsw-alias-label-tertiary);cursor:pointer;user-select:none}
 .gp-file-row{display:flex;align-items:center;gap:8px;padding:4px 10px 4px 20px;cursor:pointer;font-size:12px;border-radius:4px}

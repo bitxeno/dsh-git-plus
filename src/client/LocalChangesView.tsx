@@ -14,7 +14,7 @@ import { ChevronIcon, FolderIcon } from './icons'
 import { buildFileTree, type FileTreeNode } from './file-tree'
 import { Tip } from './Tip'
 import { statusChar, statusClass } from './status'
-import { useResizableColumn } from './resizable'
+import { useResizableColumn, useResizableRow } from './resizable'
 import { segButtons } from './seg'
 
 interface ChangesTabProps {
@@ -242,7 +242,8 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
 
   const renderGroup = (
     key: GroupKey, label: string, tree: readonly FileTreeNode[], stagedSide: boolean, count: number,
-  ): JSX.Element => h('div', { key, className: 'gp-changes__group' }, [
+    style?: { flex?: string },
+  ): JSX.Element => h('div', { key, className: 'gp-changes__group gp-pane', ...(style !== undefined ? { style } : {}) }, [
     h('div', { key: 'head', className: 'gp-changes__grouphead', onClick: () => toggleGroup(key) }, [
       h(ChevronIcon, { key: 'chev', size: 12, open: !closed.has(key) }),
       h('span', { key: 't' }, `${label} (${count})`),
@@ -258,7 +259,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
         },
       }, stagedSide ? t('changes.unstage') : t('changes.stage')),
     ]),
-    closed.has(key) ? null : h('div', { key: 'tree' }, renderTree(tree, 0, stagedSide)),
+    closed.has(key) ? null : h('div', { key: 'body', className: 'gp-pane__body' }, renderTree(tree, 0, stagedSide)),
   ])
 
   const summary = diffText !== null && diffText !== '' ? diffSummary(diffText) : null
@@ -266,18 +267,30 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, t }: Changes
   // The left change-list column is drag-resizable; the right diff column takes
   // the rest. Width persists across mounts.
   const leftCol = useResizableColumn({ storageKey: 'gp.changes.left', initial: 380, min: 220, reserve: 200, edge: 'end' })
+  // Unstaged/staged split: two stacked panes, staged owns `frac` of the free
+  // space (default 40%). Dragging the divider adjusts it; persists.
+  const split = useResizableRow({ storageKey: 'gp.changes.staged.frac', initialFrac: 0.4, min: 80 })
+  const unstagedClosed = closed.has('unstaged')
+  const stagedClosed = closed.has('staged')
+  const showRowDivider = snapshot.changes.length > 0 && !unstagedClosed && !stagedClosed
+  const unstagedFlex = unstagedClosed ? 'none' : stagedClosed ? '1 1 0' : `${1 - split.frac} 1 0`
+  const stagedFlex = stagedClosed ? 'none' : unstagedClosed ? '1 1 0' : `${split.frac} 1 0`
 
   return h('div', { className: 'gp-changes' }, [
     // left
     h('div', { key: 'left', className: 'gp-changes__left', style: { flex: `0 0 ${leftCol.width}px` } }, [
       h(ChangeStats, { key: 'stats', stats: snapshot.stats, t }),
       error !== null ? h('div', { key: 'err', className: 'gp-feedback' }, error) : null,
-      h('div', { key: 'list', className: 'gp-changes__list' },
+      h('div', { key: 'panes', ref: split.containerRef, className: 'gp-changes__panes' },
         snapshot.changes.length === 0
           ? h('div', { className: 'gp-empty' }, t('changes.noChanges'))
           : [
-            renderGroup('unstaged', t('changes.groupUnstaged'), unstagedTree, false, unstaged.length),
-            renderGroup('staged', t('changes.groupStaged'), stagedTree, true, staged.length),
+            renderGroup('unstaged', t('changes.groupUnstaged'), unstagedTree, false, unstaged.length, { flex: unstagedFlex }),
+            showRowDivider ? h('div', {
+              key: 'rz', className: 'gp-rowresizer', role: 'separator', 'aria-orientation': 'horizontal',
+              onPointerDown: split.dividerProps.onPointerDown,
+            }) : null,
+            renderGroup('staged', t('changes.groupStaged'), stagedTree, true, staged.length, { flex: stagedFlex }),
           ]),
       // commit box
       h('div', { key: 'box', className: 'gp-commitbox' }, [
