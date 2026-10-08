@@ -8,6 +8,11 @@ English | [中文](README.zh.md)
 
 An IDE-style Git panel for the DeepSeek Harness web GUI. A sidebar with **Local Changes** and **All Commits**, branch / tag / stash management, fetch / pull / push dialogs, merge with conflict handling, and a zsh-style branch marker in the input bar.
 
+<p align="center">
+  <img src="docs/image/screenshot_changes.png" alt="Local Changes view" width="50%">
+  <img src="docs/image/screenshot_commits.png" alt="All Commits view" width="50%">
+</p>
+
 ## Install
 
 ```sh

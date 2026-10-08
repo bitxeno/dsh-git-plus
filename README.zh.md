@@ -8,6 +8,11 @@
 
 DeepSeek Harness Web GUI 的 IDE 风格 Git 面板。侧栏提供 **Local Changes**（本地变更）与 **All Commits**（全部提交），以及分支 / 标签 / Stash 管理、Fetch / Pull / Push 弹窗、带冲突处理的合并，还有输入框上的 zsh 风格分支标记。
 
+<p align="center">
+  <img src="docs/image/screenshot_changes.png" alt="Local Changes 视图" width="50%">
+  <img src="docs/image/screenshot_commits.png" alt="All Commits 视图" width="50%">
+</p>
+
 ## 安装
 
 ```sh
