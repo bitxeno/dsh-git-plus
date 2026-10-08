@@ -204,6 +204,9 @@ export type GitAction = {
     readonly kind: 'ignore';
     readonly patterns: readonly string[];
 } | {
+    readonly kind: 'reveal';
+    readonly path: string;
+} | {
     readonly kind: 'rebase';
     readonly onto: string;
     readonly autostash?: boolean;
@@ -305,6 +308,8 @@ export type GitQuery = {
     readonly paths: readonly string[];
 } | {
     readonly kind: 'quick-status';
+} | {
+    readonly kind: 'host-platform';
 } | {
     readonly kind: 'github-avatars';
     readonly owner: string;
@@ -444,6 +449,9 @@ export type GitQueryResult = {
     readonly untracked: number;
     readonly ahead: number;
     readonly behind: number;
+} | {
+    readonly kind: 'host-platform';
+    readonly platform: string;
 };
 export type GitQueryResponse = {
     readonly ok: true;

@@ -7,11 +7,13 @@ export function ModalShell(props: {
   readonly title: string
   readonly onClose: () => void
   readonly children: JSX.Element | readonly (JSX.Element | null)[]
+  /** Wider card for content previews (default 380px fits forms). */
+  readonly wide?: boolean
 }): JSX.Element {
   if (typeof document === 'undefined') return h('div', {}, props.children)
   return createPortal(
     h('div', { className: 'gp-dialog-backdrop', onClick: (e: { target: unknown; currentTarget: unknown }) => { if (e.target === e.currentTarget) props.onClose() } },
-      h('div', { className: 'gp-dialog', role: 'dialog' }, [
+      h('div', { className: `gp-dialog${props.wide === true ? ' gp-dialog--wide' : ''}`, role: 'dialog' }, [
         h('div', { key: 'h', className: 'gp-dialog__head' }, [
           h('h2', { key: 't', className: 'gp-dialog__title' }, props.title),
           h('button', { key: 'x', type: 'button', className: 'gp-dialog__x', onClick: props.onClose, 'aria-label': '×' }, '×'),

@@ -19,6 +19,7 @@ import { StashSaveModal } from './modals/StashSave'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
 import { DeleteBranchModal } from './modals/DeleteBranch'
+import { FilePreviewModal } from './modals/FilePreview'
 import { TrackRemoteModal } from './modals/TrackRemote'
 import { RenameBranchModal } from './modals/RenameBranch'
 import type { GitAction } from './types'
@@ -42,6 +43,7 @@ type ModalState =
   | { kind: 'checkout'; ref: string; subject: string }
   | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
   | { kind: 'track'; remote: string; localNames: readonly string[] }
+  | { kind: 'preview'; path: string }
   | { kind: 'confirm'; title: string; message: string; action: GitAction; danger?: boolean }
   | null
 
@@ -146,6 +148,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
           ? h(ConflictBanner, { key: 'cf', remote, sessionId, onAction, t })
           : null,
         h(ChangesTab, { key: `${sessionId}-local`, remote, sessionId, snapshot, onAction, t,
+          onPreviewFile: (path) => setModal({ kind: 'preview', path }),
           onStashPaths: (paths, includeUntracked) => setModal({ kind: 'stash', paths, includeUntracked }),
           onDiscardPaths: (paths, count) => setModal({
             kind: 'confirm',
@@ -256,6 +259,7 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
       localNames: modal.localNames, onClose: ctx.onClose, onSubmit: ctx.onAction,
     })
   }
+  if (modal.kind === 'preview') return h(FilePreviewModal, { remote: ctx.remote, sessionId: ctx.sessionId, path: modal.path, t: ctx.t, onClose: ctx.onClose })
   if (modal.kind === 'rename') return h(RenameBranchModal, { t: ctx.t, oldName: modal.oldName, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: modal.danger ?? true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })

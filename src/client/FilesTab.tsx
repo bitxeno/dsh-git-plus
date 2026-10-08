@@ -24,17 +24,18 @@ interface FilesTabProps {
 
 type Loaded = { readonly status: 'loading' } | { readonly status: 'error' } | { readonly status: 'ready'; readonly entries: readonly DirEntry[]; readonly truncated: boolean }
 
-function isMarkdownPath(path: string): boolean { return /\.(?:md|markdown)$/i.test(path) }
+export function isMarkdownPath(path: string): boolean { return /\.(?:md|markdown)$/i.test(path) }
 function isHtmlPath(path: string): boolean { return /\.(?:html?|xhtml)$/i.test(path) }
 /** Text files that offer a rendered view beside their source. */
 function isRichPath(path: string): boolean { return isMarkdownPath(path) || isHtmlPath(path) }
 
-// Source-view performance guards. Syntax highlighting is synchronous and DOM
-// cost scales with line count, so above these limits the code preview degrades
-// gracefully: no highlighting for a big file, truncation for a huge line.
-const MAX_HIGHLIGHT_BYTES = 256 * 1024
-const MAX_HIGHLIGHT_LINES = 5000
-const MAX_LINE_CHARS = 5000
+// Source-view performance guards (shared with the file preview modal).
+// Syntax highlighting is synchronous and DOM cost scales with line count, so
+// above these limits the code preview degrades gracefully: no highlighting
+// for a big file, truncation for a huge line.
+export const MAX_HIGHLIGHT_BYTES = 256 * 1024
+export const MAX_HIGHLIGHT_LINES = 5000
+export const MAX_LINE_CHARS = 5000
 
 // Row virtualization: the source view renders only the rows in (or near) the
 // viewport, so a 15k-line file mounts ~a screenful of nodes instead of 30k.

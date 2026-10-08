@@ -26,6 +26,7 @@ interface ChangesTabProps {
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
   readonly onStashPaths: (paths: readonly string[], includeUntracked: boolean) => void
   readonly onDiscardPaths: (paths: readonly string[], count: number) => void
+  readonly onPreviewFile: (path: string) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
 
@@ -41,7 +42,7 @@ interface ChangeMenuState {
   readonly target: ChangeMenuTarget
 }
 
-export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths, onDiscardPaths, t }: ChangesTabProps): JSX.Element {
+export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths, onDiscardPaths, onPreviewFile, t }: ChangesTabProps): JSX.Element {
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -50,7 +51,19 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   const [closedDirs, setClosedDirs] = useState<ReadonlySet<string>>(new Set())
   const [activeDir, setActiveDir] = useState<string | null>(null)
   const [armedDiscard, setArmedDiscard] = useState<string | null>(null)
+  // Host platform for the reveal-in-file-manager menu entry (macOS/Windows
+  // only; Linux hides it). Static per session, fetched once.
   const [menu, setMenu] = useState<ChangeMenuState | null>(null)
+  const [hostPlatform, setHostPlatform] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    void remote.query({ sessionId, query: { kind: 'host-platform' } }).then((res) => {
+      if (!alive) return
+      const v = queryAs(res, 'host-platform')
+      if (v !== null) setHostPlatform(v.platform)
+    })
+    return () => { alive = false }
+  }, [remote, sessionId])
   const [diffPath, setDiffPath] = useState<{ path: string; base: 'worktree' | 'staged' } | null>(null)
   const [diffText, setDiffText] = useState<string | null>(null)
   const [diffMode, setDiffMode] = useState<DiffMode>(() => snapshot.defaultDiffView)
@@ -439,6 +452,12 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   // Right-click menu for a file or folder row, grouped by function:
   // stage | stash + patch | ignore patterns | discard (danger).
   const menuItems: readonly MenuItem[] = menu === null ? [] : buildChangeMenuItems(menu.target, {
+    view: (path) => onPreviewFile(path),
+    reveal: hostPlatform === 'darwin'
+      ? { label: t('menu.revealFinder'), run: (path) => void run({ kind: 'reveal', path }) }
+      : hostPlatform === 'win32'
+        ? { label: t('menu.revealExplorer'), run: (path) => void run({ kind: 'reveal', path }) }
+        : null,
     stage: (paths, stagedSide) => stagePaths(paths, stagedSide),
     stash: (paths, includeUntracked) => onStashPaths(paths, includeUntracked),
     patch: (paths) => void savePatch(paths),
@@ -566,6 +585,9 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
 }
 
 interface ChangeMenuCbs {
+  readonly view: (path: string) => void
+  /** Reveal-in-file-manager entry; null hides it (unsupported platform). */
+  readonly reveal: { readonly label: string; readonly run: (path: string) => void } | null
   readonly stage: (paths: readonly string[], stagedSide: boolean) => void
   readonly stash: (paths: readonly string[], includeUntracked: boolean) => void
   readonly patch: (paths: readonly string[]) => void
@@ -590,6 +612,27 @@ function buildChangeMenuItems(target: ChangeMenuTarget, cb: ChangeMenuCbs): Menu
   const sep = (key: string): MenuItem => ({ key, separator: true })
 
   const sections: MenuItem[][] = []
+  // View leads: a read-only preview modal (file targets only), then the
+  // native file-manager reveal (macOS/Windows only).
+  const nav: MenuItem[] = []
+  if (target.kind === 'file') {
+    nav.push({
+      key: 'view',
+      label: cb.t('menu.view'),
+      onSelect: () => cb.view(target.change.path),
+    })
+  }
+  if (cb.reveal !== null) {
+    const reveal = cb.reveal
+    // Directories reveal as one entry (opening every leaf would pop N windows).
+    const revealPath = target.kind === 'file' ? target.change.path : target.dir
+    nav.push({
+      key: 'reveal',
+      label: reveal.label,
+      onSelect: () => reveal.run(revealPath),
+    })
+  }
+  if (nav.length > 0) sections.push(nav)
   sections.push([{
     key: 'stage',
     label: stagedSide

@@ -464,6 +464,14 @@ const CSS = `
 .gp-dialog__x:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .gp-dialog__body{padding:0 24px;display:flex;flex-direction:column;gap:12px}
 .gp-dialog__foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:20px 24px 24px}
+/* Wide dialog variant for content previews (default 380px fits forms). */
+.gp-dialog--wide{width:min(720px,100%)}
+/* File preview modal: inner-scrolling body so title/footer stay put. */
+.gp-preview-body{min-height:120px;max-height:60vh;overflow:auto;overscroll-behavior:contain}
+.gp-preview-code{font-family:var(--dsw-font-mono,monospace);font-size:12px}
+.gp-preview-row{display:grid;grid-template-columns:38px 1fr}
+.gp-preview-image{display:flex;align-items:center;justify-content:center;padding:8px}
+.gp-preview-image img{max-width:100%;max-height:50vh;object-fit:contain;border-radius:8px}
 .gp-modal__err{color:var(--dsw-alias-state-error-primary);font-size:12px}
 .gp-field{display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
 .gp-field input[type=text]{box-sizing:border-box;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}

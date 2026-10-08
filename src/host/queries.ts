@@ -63,6 +63,7 @@ export async function runQuery(
       case 'remote-url': return await queryRemoteUrl(deps, root)
       case 'patch': return await queryPatch(deps, root, q)
       case 'quick-status': return await queryQuickStatus(deps, root)
+      case 'host-platform': return { ok: true, value: { kind: 'host-platform', platform: process.platform } }
       case 'github-avatars': return await queryGithubAvatars(deps, root, q)
     }
   } catch (error) {

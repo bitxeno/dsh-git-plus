@@ -36,7 +36,7 @@ export function isNetworkCommand(argv: readonly string[]): boolean {
 }
 
 /** Build the git command sequence for an action. */
-export function planAction(action: GitAction, unborn: boolean): PlanResult {
+export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.Platform = process.platform): PlanResult {
   switch (action.kind) {
     case 'stage':
       return withPaths([['git', 'add', '--']], action.paths)
@@ -214,10 +214,31 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
       // Executed directly in runAction (a .gitignore file write, not a git
       // command); reaching the planner with it is a programming error.
       return { error: 'git-error', message: 'ignore has no command plan' }
+    case 'reveal':
+      if (!isSafePath(action.path)) return { error: 'invalid-path', message: `unsafe path: ${action.path}` }
+      return planReveal(action.path, platform)
     case 'rebase':
     case 'worktree-add':
       return { error: 'not-implemented', message: `${action.kind} is planned for V2` }
   }
+}
+
+/**
+ * Reveal a repo-relative path in the native file manager. argv runs with the
+ * repo root as cwd (like every other action), so relative paths resolve.
+ * Linux has no universal reveal-and-select; the client hides the menu there.
+ */
+function planReveal(path: string, platform: NodeJS.Platform): PlanResult {
+  if (platform === 'darwin') {
+    // A leading dash would parse as an `open` option; `./` pins it positional.
+    const target = path.startsWith('-') ? `./${path}` : path
+    return { argv: [['open', '-R', target]] }
+  }
+  if (platform === 'win32') {
+    // Attached with a comma, so a leading dash stays inside the value.
+    return { argv: [['explorer', `/select,${path}`]] }
+  }
+  return { error: 'not-implemented', message: `reveal unsupported on ${platform}` }
 }
 
 /**

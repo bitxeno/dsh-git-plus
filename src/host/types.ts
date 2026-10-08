@@ -180,6 +180,7 @@ export type GitAction =
   | { readonly kind: 'stash-pop'; readonly index: number }
   | { readonly kind: 'stash-drop'; readonly index: number }
   | { readonly kind: 'ignore'; readonly patterns: readonly string[] }
+  | { readonly kind: 'reveal'; readonly path: string }
   // V2 stubs (typed now, rejected with not-implemented until V2):
   | { readonly kind: 'rebase'; readonly onto: string; readonly autostash?: boolean }
   | { readonly kind: 'worktree-add'; readonly path: string; readonly branch?: string; readonly newBranch?: string }
@@ -240,6 +241,7 @@ export type GitQuery =
   | { readonly kind: 'remote-url' }
   | { readonly kind: 'patch'; readonly paths: readonly string[] }
   | { readonly kind: 'quick-status' }
+  | { readonly kind: 'host-platform' }
   | { readonly kind: 'github-avatars'; readonly owner: string; readonly repo: string }
 
 export interface DirEntry {
@@ -343,6 +345,7 @@ export type GitQueryResult =
     readonly ahead: number
     readonly behind: number
   }
+  | { readonly kind: 'host-platform'; readonly platform: string }
 
 export type GitQueryResponse =
   | { readonly ok: true; readonly value: GitQueryResult }

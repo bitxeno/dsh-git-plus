@@ -13,7 +13,7 @@ type PlanResult = CommandPlan | {
  * under the generous network timeout instead of the fast local-command cap. */
 export declare function isNetworkCommand(argv: readonly string[]): boolean;
 /** Build the git command sequence for an action. */
-export declare function planAction(action: GitAction, unborn: boolean): PlanResult;
+export declare function planAction(action: GitAction, unborn: boolean, platform?: NodeJS.Platform): PlanResult;
 /**
  * Continue/abort command plan for an in-progress operation (mirrors the
  * reference `continueOperation`/`abortOperation` dispatch). Continue always
