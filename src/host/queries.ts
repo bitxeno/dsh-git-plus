@@ -7,7 +7,7 @@ import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { isSafePath, isSafeRev } from './validate.ts'
-import { parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence } from './parser.ts'
+import { parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence, parseRemoteUrls, stripRefNamespace } from './parser.ts'
 import { extractRepoAvatars, getCachedAvatars, isGhPathName, setCachedAvatars } from './github.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
@@ -531,25 +531,46 @@ async function queryShow(deps: SnapshotDeps, root: string, ref: string): Promise
   return { ok: true, value: { kind: 'show', ref, commit, body, stats } }
 }
 
+/** Normalize a full `%(upstream)` ref to the short form the client compares. */
+function stripUpstream(upstream: string): string {
+  return stripRefNamespace(stripRefNamespace(upstream, 'remotes'), 'heads')
+}
+
 async function queryBranches(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
-  const fmt = '--format=%(refname:short)%00%(objectname:short)%00%(upstream:track)%00%(upstream:short)'
-  const [localRes, remoteRes, currentRes, defaultRes, remotesRes] = await Promise.all([
+  // Full refnames, stripped per-namespace below: `%(refname:short)` is only the
+  // shortest *unambiguous* abbreviation, so it aliases on collision (branch
+  // `Go` vs tag `go` comes back as `heads/Go`). The per-query namespace makes
+  // one exact strip possible.
+  const fmt = '--format=%(refname)%00%(objectname:short)%00%(upstream:track)%00%(upstream)'
+  const [localRes, remoteRes, currentRes, defaultRes, remotesRes, remoteUrlsRes] = await Promise.all([
     runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/heads'], root, 'branches-local', deps.signal),
     runCommand(deps.run, ['git', 'for-each-ref', '--sort=-committerdate', fmt, 'refs/remotes'], root, 'branches-remote', deps.signal),
     runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'HEAD'], root, 'branch-current', deps.signal),
     runCommand(deps.run, ['git', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], root, 'branch-default', deps.signal),
     runCommand(deps.run, ['git', 'remote'], root, 'remotes', deps.signal),
+    runCommand(deps.run, ['git', 'remote', '-v'], root, 'remotes-verbose', deps.signal),
   ])
-  const localRaw: GitBranch[] = 'run' in localRes && localRes.run.exitCode === 0 ? parseBranches(localRes.run.stdout) : []
+  const localRaw: GitBranch[] = 'run' in localRes && localRes.run.exitCode === 0
+    ? parseBranches(localRes.run.stdout).map((b) => ({
+      ...b,
+      name: stripRefNamespace(b.name, 'heads'),
+      ...(b.upstream !== undefined ? { upstream: stripUpstream(b.upstream) } : {}),
+    }))
+    : []
   // `null` (not `[]`) when the listing failed: a broken command is unknown, so
   // no branch may be marked local-only on the strength of it. An empty *success*
   // stays `[]` — that is a real "no remote-tracking refs" answer.
   const remote: GitBranch[] | null = 'run' in remoteRes && remoteRes.run.exitCode === 0
-    ? parseBranches(remoteRes.run.stdout).filter((b) => !b.name.endsWith('/HEAD'))
+    ? parseBranches(remoteRes.run.stdout)
+      .map((b) => ({ ...b, name: stripRefNamespace(b.name, 'remotes') }))
+      .filter((b) => !b.name.endsWith('/HEAD'))
     : null
   const remotes = 'run' in remotesRes && remotesRes.run.exitCode === 0
     ? remotesRes.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
     : []
+  const remoteUrls = 'run' in remoteUrlsRes && remoteUrlsRes.run.exitCode === 0
+    ? parseRemoteUrls(remoteUrlsRes.run.stdout)
+    : {}
   // With a remote configured, a branch that no remote-tracking ref backs is
   // local-only — including when the repo has never been fetched, where the
   // remote holds none of our branches. With no remote configured the flag stays
@@ -563,13 +584,16 @@ async function queryBranches(deps: SnapshotDeps, root: string): Promise<GitQuery
   }
   // The response keeps an always-array shape; only the marker above cares about
   // the unknown-vs-empty distinction. `remotes` feeds the fetch/pull/push
-  // dialogs (configured remote names, `git remote` order).
-  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote: remote ?? [], remotes } }
+  // dialogs (configured remote names, `git remote` order); `remoteUrls` feeds
+  // the sidebar's per-remote icons.
+  return { ok: true, value: { kind: 'branches', current, defaultBranch, local, remote: remote ?? [], remotes, remoteUrls } }
 }
 
 async function queryTags(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
-  const res = await runCommand(deps.run, ['git', 'for-each-ref', '--sort=-creatordate', '--format=%(refname:short)%00%(objectname:short)', 'refs/tags'], root, 'tags', deps.signal)
-  const tags: GitBranch[] = 'run' in res && res.run.exitCode === 0 ? parseTags(res.run.stdout) : []
+  const res = await runCommand(deps.run, ['git', 'for-each-ref', '--sort=-creatordate', '--format=%(refname)%00%(objectname:short)', 'refs/tags'], root, 'tags', deps.signal)
+  const tags: GitBranch[] = 'run' in res && res.run.exitCode === 0
+    ? parseTags(res.run.stdout).map((b) => ({ ...b, name: stripRefNamespace(b.name, 'tags') }))
+    : []
   return { ok: true, value: { kind: 'tags', tags } }
 }
 

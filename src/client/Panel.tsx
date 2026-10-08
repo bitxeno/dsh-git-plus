@@ -18,6 +18,8 @@ import { MergeBranchModal } from './modals/MergeBranch'
 import { StashSaveModal } from './modals/StashSave'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
+import { DeleteBranchModal } from './modals/DeleteBranch'
+import { TrackRemoteModal } from './modals/TrackRemote'
 import { RenameBranchModal } from './modals/RenameBranch'
 import type { GitAction } from './types'
 import type { GitKey } from './locales'
@@ -38,6 +40,8 @@ type ModalState =
   | { kind: 'push'; branch?: string; remote?: string }
   | { kind: 'rename'; oldName: string }
   | { kind: 'checkout'; ref: string; subject: string }
+  | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
+  | { kind: 'track'; remote: string; localNames: readonly string[] }
   | { kind: 'confirm'; title: string; message: string; action: GitAction; danger?: boolean }
   | null
 
@@ -172,10 +176,11 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
       remote, sessionId, snapshot: view.snapshot,
       selection: { view: active.view === 'files' ? 'local' : active.view, refFilter: active.refFilter },
       onSelect: (sel) => setSelection(sel),
-      onAction, onOpenModal: (kind, preset) => {
+      onAction,       onOpenModal: (kind, preset, localNames) => {
         if (kind === 'branch') setModal({ kind: 'branch', ...(preset !== undefined ? { startPoint: preset } : {}) })
         else if (kind === 'tag') setModal({ kind: 'tag', ...(preset !== undefined ? { ref: preset } : {}) })
         else if (kind === 'merge') setModal({ kind: 'merge', preset })
+        else if (kind === 'track') setModal({ kind: 'track', remote: preset ?? '', localNames: [...(localNames ?? [])] })
         else if (kind === 'fetch' || kind === 'pull' || kind === 'push') setModal({ kind })
         else setModal({ kind: 'stash' })
       },
@@ -189,12 +194,18 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         danger: false,
       }),
       onRenameBranch: (oldName) => setModal({ kind: 'rename', oldName }),
-      onDeleteRef: (kind, name) => setModal({
-        kind: 'confirm',
-        title: t(kind === 'branch' ? 'modal.deleteBranchTitle' : 'modal.deleteTagTitle'),
-        message: t('modal.deleteConfirm'),
-        action: kind === 'branch' ? { kind: 'delete-branch', name } : { kind: 'delete-tag', name },
-      }),
+      onDeleteRef: (kind, name, opts) => {
+        if (kind === 'branch') {
+          setModal({ kind: 'delete-branch', name, remote: opts?.remote ?? null, remoteIsGitHub: opts?.remoteIsGitHub ?? false })
+          return
+        }
+        setModal({
+          kind: 'confirm',
+          title: t('modal.deleteTagTitle'),
+          message: t('modal.deleteConfirm'),
+          action: { kind: 'delete-tag', name },
+        })
+      },
       t,
     })
   })()
@@ -236,6 +247,15 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
     ...(modal.remote !== undefined ? { initialRemote: modal.remote } : {}),
   })
   if (modal.kind === 'checkout') return h(CheckoutModal, { t: ctx.t, refName: modal.ref, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'delete-branch') return h(DeleteBranchModal, { t: ctx.t, branchName: modal.name, remote: modal.remote, remoteIsGitHub: modal.remoteIsGitHub, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'track') {
+    const segs = modal.remote.split('/')
+    return h(TrackRemoteModal, {
+      t: ctx.t, remoteName: modal.remote,
+      defaultLocalName: segs.length > 1 ? segs.slice(1).join('/') : modal.remote,
+      localNames: modal.localNames, onClose: ctx.onClose, onSubmit: ctx.onAction,
+    })
+  }
   if (modal.kind === 'rename') return h(RenameBranchModal, { t: ctx.t, oldName: modal.oldName, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: modal.danger ?? true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })

@@ -3,12 +3,13 @@
  * can import them from a built ESM bundle (lib/testkit.mjs) without a
  * TypeScript loader. Not part of the plugin runtime.
  */
-export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, markRemotePresence, parseBranchHeader, sumNumstat, parseRefs } from '../host/parser.ts'
+export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, markRemotePresence, parseBranchHeader, sumNumstat, parseRefs, stripRefNamespace, parseRemoteUrls } from '../host/parser.ts'
 export { extractRepoAvatars, isGhPathName } from '../host/github.ts'
 export { isSafePath, isSafeRev, isSafeBranchName, isSafeIgnorePattern } from '../host/validate.ts'
 export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
+export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch } from './branch-groups.ts'
 export { escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from './ignore-pattern.ts'
 export { layoutGraph, graphWidth } from './git-graph.ts'
 export { authorAvatarUrl, githubUsernameFromNoreply, gravatarUrlFor, isGitHubRemote, md5Hex, parseGitHubRepo } from './avatar.ts'

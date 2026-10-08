@@ -4,7 +4,7 @@ import type { GitAction } from '../types'
 import type { GitKey } from '../locales'
 import { ModalFooter, ModalShell } from './shell'
 
-/** Generic danger/confirm dialog (used for delete-branch / delete-tag). */
+/** Generic danger/confirm dialog (used for delete-tag). */
 export function ConfirmModal(props: {
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
   readonly title: string

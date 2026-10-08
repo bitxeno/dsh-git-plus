@@ -123,14 +123,25 @@ export function planAction(action: GitAction, unborn: boolean): PlanResult {
         if (action.startPoint) args.push('--end-of-options', action.startPoint)
         return { argv: [args] }
       }
-      const args = ['git', 'branch', action.name]
+      // Explicit --track (not just autoSetupMerge): the Track dialog promises
+      // the new branch tracks its start point regardless of user config.
+      const args = ['git', 'branch']
+      if (action.track === true) args.push('--track')
+      args.push(action.name)
       if (action.startPoint) args.push(action.startPoint)
       return { argv: [args] }
     }
     case 'delete-branch': {
       const bad = safeBranch(action.name)
       if (bad) return bad
-      return { argv: [['git', 'branch', action.force === true ? '-D' : '-d', '--end-of-options', action.name]] }
+      // Local first: an unmerged `-d` aborts before anything remote is
+      // touched. The push step runs under the network timeout (isNetworkCommand).
+      const argv: string[][] = [['git', 'branch', action.force === true ? '-D' : '-d', '--end-of-options', action.name]]
+      if (action.remote !== undefined && action.remote !== '') {
+        if (!isSafeRev(action.remote)) return { error: 'invalid-name', message: `unsafe remote: ${action.remote}` }
+        argv.push(['git', 'push', '--delete', '--end-of-options', action.remote, action.name])
+      }
+      return { argv }
     }
     case 'rename-branch': {
       if (!isSafeBranchName(action.oldName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.oldName}` }
@@ -314,6 +325,11 @@ export async function runAction(
       // partial state — retrying the whole action would hit "already exists".
       if (action.kind === 'create-tag' && action.push === true && step > 0) {
         return { ok: false, error: { code: 'git-error', message: `tag created locally, but push failed: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
+      }
+      // delete-branch + remote: the local branch is already gone, so name the
+      // partial state instead of a bare push failure.
+      if (action.kind === 'delete-branch' && action.remote !== undefined && action.remote !== '' && step > 0) {
+        return { ok: false, error: { code: 'git-error', message: `branch deleted locally, but remote delete failed: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
       }
       // Merge/pull conflicts: surface as a typed conflicted result with the file
       // list so the client can jump straight to the conflict banner.

@@ -152,11 +152,13 @@ export type GitAction = {
     readonly kind: 'create-branch';
     readonly name: string;
     readonly startPoint?: string;
-    readonly checkout?: boolean;
+    readonly checkout?: boolean; /** Set an upstream when creating (`--track`). */
+    readonly track?: boolean;
 } | {
     readonly kind: 'delete-branch';
     readonly name: string;
-    readonly force?: boolean;
+    readonly force?: boolean; /** Also delete `<name>` on `<remote>` (`git push <remote> --delete`). */
+    readonly remote?: string;
 } | {
     readonly kind: 'rename-branch';
     readonly oldName: string;
@@ -378,6 +380,7 @@ export type GitQueryResult = {
     readonly local: readonly GitBranch[];
     readonly remote: readonly GitBranch[];
     readonly remotes: readonly string[];
+    readonly remoteUrls: Record<string, string>;
 } | {
     readonly kind: 'tags';
     readonly tags: readonly GitBranch[];

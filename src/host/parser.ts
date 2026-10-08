@@ -113,6 +113,23 @@ export function parseRefs(decoration: string): GitRef[] {
   return refs
 }
 
+/**
+ * Strip one known namespace prefix from a full refname
+ * (`refs/heads/Go` → `Go`). The caller queries one namespace at a time, so a
+ * single strip is exact — including a branch literally named `heads/foo`
+ * (`refs/heads/heads/foo` → `heads/foo`). Anything without the prefix passes
+ * through untouched.
+ *
+ * Why not `%(refname:short)`: `:short` is the *shortest unambiguous*
+ * abbreviation, so a branch collides into a longer form whenever another ref
+ * reads the same short (e.g. branch `Go` vs tag `go` yields `heads/Go`,
+ * and the tag yields `tags/go`). Full names have no such aliasing.
+ */
+export function stripRefNamespace(refname: string, namespace: 'heads' | 'remotes' | 'tags'): string {
+  const prefix = `refs/${namespace}/`
+  return refname.startsWith(prefix) ? refname.slice(prefix.length) : refname
+}
+
 /** Parse `git for-each-ref` branch lines: `name\0shortHash\0track\0upstream`. */
 export function parseBranches(stdout: string): GitBranch[] {
   const out: GitBranch[] = []
@@ -183,6 +200,27 @@ export function markRemotePresence(
     const onRemote = isRemoteUpstream ? remoteRefs.has(upstream) : remoteNames.has(branch.name)
     return { ...branch, onRemote }
   })
+}
+
+/**
+ * Parse `git remote -v` (`<name>\t<url> (fetch|push)` per line) into one URL
+ * per remote, preferring the fetch URL; a push-only line fills in when fetch
+ * is absent. Drives the sidebar's per-remote (GitHub vs plain git) icons.
+ */
+export function parseRemoteUrls(stdout: string): Record<string, string> {
+  const fetch = new Map<string, string>()
+  const fallback = new Map<string, string>()
+  for (const line of stdout.split('\n')) {
+    const m = /^(\S+)\s+(\S+)\s+\((fetch|push)\)\s*$/.exec(line.trim())
+    if (!m) continue
+    const [, name, url, kind] = m
+    if (kind === 'fetch') fetch.set(name!, url!)
+    else if (!fallback.has(name!)) fallback.set(name!, url!)
+  }
+  const out: Record<string, string> = {}
+  for (const [name, url] of fallback) out[name] = url
+  for (const [name, url] of fetch) out[name] = url
+  return out
 }
 
 /** Parse `git for-each-ref` tag lines: `name\0shortHash` per line. */

@@ -1,9 +1,11 @@
 /**
  * dsh-git-plus sidebar: top nav (Local Changes / All Commits), a fetch/pull/
  * push sync toolbar, and collapsible groups (Branches / Remotes / Tags /
- * Stashes). Clicking a branch/tag filters All Commits; row actions live in a
- * right-click menu; double-click a branch to check it out, double-click a tag
- * to confirm-checkout its code.
+ * Stashes). The default branch pins to the top of Branches; slash-separated
+ * names fold into collapsible folders, and Remotes groups by remote name with
+ * a per-endpoint icon (GitHub mark vs branch glyph). Clicking a branch/tag filters All
+ * Commits; row actions live in a right-click menu; double-click a branch to
+ * check it out, double-click a tag to confirm-checkout its code.
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react'
 import type { JSX } from 'react'
@@ -11,9 +13,11 @@ import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
+import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
 import { Tip } from './Tip'
+import { isGitHubRemote } from './avatar'
+import { buildBranchFolderTree, splitDefaultBranch, type BranchTreeNode } from './branch-groups'
 
 export interface SidebarSelection {
   readonly view: SubTab
@@ -27,9 +31,9 @@ interface SidebarProps {
   readonly selection: SidebarSelection
   readonly onSelect: (sel: SidebarSelection) => void
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
-  readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push', preset?: string) => void
+  readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push' | 'track', preset?: string, localNames?: readonly string[]) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
-  readonly onDeleteRef: (kind: 'branch' | 'tag', name: string) => void
+  readonly onDeleteRef: (kind: 'branch' | 'tag', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean }) => void
   readonly onPushBranch: (branch: string, remote: string) => void
   readonly onPushTag: (tag: string, remote: string) => void
   readonly onRenameBranch: (oldName: string) => void
@@ -38,15 +42,19 @@ interface SidebarProps {
 
 interface BranchTree {
   current: string | null
+  defaultBranch: string | null
   local: readonly GitBranch[]
   remote: readonly GitBranch[]
   /** Configured remote names (`git remote`), for push targets. */
   remotes: readonly string[]
+  /** Fetch URL per remote (`git remote -v`), for per-remote icons. */
+  remoteUrls: Record<string, string>
   tags: readonly GitBranch[]
   stashes: readonly StashEntry[]
 }
 
 const CLOSED_KEY = 'gp.plus.sidebar.closed'
+const FOLDER_CLOSED_KEY = 'gp.plus.sidebar.folders.closed'
 const WIDTH_KEY = 'gp.plus.sidebar.width'
 
 /** Groups collapsed on first open; Branches stays expanded. */
@@ -62,8 +70,19 @@ function readClosed(): Set<string> {
   }
 }
 
+function readFolderClosed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FOLDER_CLOSED_KEY)
+    if (!raw) return new Set()
+    return new Set(JSON.parse(raw) as string[])
+  } catch {
+    return new Set()
+  }
+}
+
 type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'branch'; readonly name: string; readonly current: boolean }
+  | { readonly x: number; readonly y: number; readonly kind: 'remote'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'tag'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
@@ -72,6 +91,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
+  const [folderClosed, setFolderClosed] = useState<ReadonlySet<string>>(readFolderClosed)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   const [armedStashDrop, setArmedStashDrop] = useState<number | null>(null)
   // Manual list refresh (branches/tags/stashes re-query; picks up external
@@ -95,9 +115,11 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       setError(false)
       setTree({
         current: b.current,
+        defaultBranch: b.defaultBranch ?? null,
         local: b.local,
         remote: b.remote,
         remotes: b.remotes ?? [...new Set(b.remote.map((r) => r.name.split('/')[0] ?? ''))].filter((r) => r !== ''),
+        remoteUrls: b.remoteUrls ?? {},
         tags: tg?.tags ?? [],
         stashes: st?.stashes ?? [],
       })
@@ -115,11 +137,48 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     })
   }
 
+  const toggleFolder = (path: string): void => {
+    setFolderClosed((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      try { localStorage.setItem(FOLDER_CLOSED_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+
   const local = useMemo(() => tree?.local ?? [], [tree])
   const tags = useMemo(() => tree?.tags ?? [], [tree])
   const stashes = useMemo(() => tree?.stashes ?? [], [tree])
+  // Default branch pins to the top; `/`-separated names fold into folders.
+  const { pinnedDefault, branchNodes } = useMemo(() => {
+    const { pinned, rest } = splitDefaultBranch(local, tree?.defaultBranch ?? null)
+    return { pinnedDefault: pinned, branchNodes: buildBranchFolderTree(rest) }
+  }, [local, tree])
 
   const run = async (action: GitAction): Promise<void> => { await onAction(action) }
+
+  const pushRemote = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
+
+  const branchRowCbsFor = (name: string): BranchRowCbs => ({
+    onSelect,
+    onCheckout: () => void run({ kind: 'branch-checkout', name }),
+    onMenu: (x, y) => setMenu({ x, y, kind: 'branch', name, current: name === tree?.current }),
+    t,
+  })
+
+  // Remote counterpart for the delete dialog's "also delete remote" checkbox:
+  // the configured upstream's remote when it is still known, else the push
+  // target when the branch is backed by some remote. Null for local-only.
+  const deleteRemoteFor = (name: string): { remote: string; remoteIsGitHub: boolean } | null => {
+    const known = tree?.remotes ?? []
+    const branch = local.find((b) => b.name === name)
+    const upSeg = branch?.upstream?.split('/') ?? []
+    const upRemote = upSeg.length > 1 && known.includes(upSeg[0]!) ? upSeg[0]! : null
+    const remote = upRemote ?? (branch?.onRemote === true && pushRemote !== undefined ? pushRemote : null)
+    if (remote === null) return null
+    return { remote, remoteIsGitHub: isGitHubRemote(tree?.remoteUrls[remote] ?? '') }
+  }
 
   const changeCount = snapshot.staged + snapshot.modified + snapshot.untracked
   // Detached HEAD: surface a HEAD pseudo-entry above the branches (like the
@@ -138,12 +197,21 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       h('span', { key: 'h', className: 'gp-branch-row__track' }, snapshot.head),
     ])]
     : []
-  const branchRows = [...headRows, ...local.map((b) => renderBranchRow(b, tree?.current ?? null, selection, {
-    onSelect,
-    onCheckout: () => void run({ kind: 'branch-checkout', name: b.name }),
-    onMenu: (x, y) => setMenu({ x, y, kind: 'branch', name: b.name, current: b.name === tree?.current }),
-    t,
-  }))]
+  const pinnedRows = pinnedDefault !== null
+    ? [renderBranchRow(pinnedDefault, tree?.current ?? null, selection, branchRowCbsFor(pinnedDefault.name), {
+      displayName: pinnedDefault.name,
+      depth: 0,
+      isDefault: true,
+    })]
+    : []
+  const groupedRows = renderBranchNodes(branchNodes, {
+    current: tree?.current ?? null,
+    selection,
+    folderClosed,
+    onToggleFolder: toggleFolder,
+    cbsFor: branchRowCbsFor,
+  })
+  const branchRows = [...headRows, ...pinnedRows, ...groupedRows]
   const tagRows = tags.map((b) => renderTagRow(b, selection.view === 'commits' && selection.refFilter === b.name, {
     onSelect,
     onCheckout: () => onCheckoutRef(b.name, ''),
@@ -153,14 +221,40 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onArm: () => setArmedStashDrop(s.index),
     onDrop: () => { setArmedStashDrop(null); void run({ kind: 'stash-drop', index: s.index }) },
   }))
-  const remoteRows = (tree?.remote ?? []).slice(0, 50).map((b) =>
-    h('div', { key: `r-${b.name}`, className: 'gp-branch-row', title: b.name }, [
-      h('span', { key: 'i', className: 'gp-row-icon' }, h(BranchIcon, { size: 13 })),
-      h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
-    ]),
-  )
-
-  const pushRemote = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
+  // Remote-tracking refs grouped by remote name (`origin/main` → folder
+  // `origin`), same folder component as local branches. Keys are prefixed so
+  // they never collide with local folders in the shared collapsed set. The
+  // default branch's ref on the primary remote pins to the top like locally.
+  const { pinnedRemoteRow, remoteNodes } = useMemo(() => {
+    const flat = (tree?.remote ?? []).slice(0, 50)
+    const primary = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
+    const defName = tree?.defaultBranch != null && primary !== undefined ? `${primary}/${tree.defaultBranch}` : null
+    const { pinned, rest } = splitDefaultBranch(flat, defName)
+    return { pinnedRemoteRow: pinned, remoteNodes: buildBranchFolderTree(rest) }
+  }, [tree])
+  const remoteLeafCbsFor = (name: string): BranchRowCbs => ({
+    onSelect,
+    // Double-click opens the Track dialog (create a local tracking branch);
+    // explicit detached checkout stays in the right-click menu.
+    onCheckout: () => onOpenModal('track', name, local.map((b) => b.name)),
+    onMenu: (x, y) => setMenu({ x, y, kind: 'remote', name }),
+    t,
+  })
+  const pinnedRemoteRows = pinnedRemoteRow !== null
+    ? [renderBranchRow(pinnedRemoteRow, null, selection, remoteLeafCbsFor(pinnedRemoteRow.name), {
+      displayName: pinnedRemoteRow.name,
+      depth: 0,
+      isDefault: true,
+    })]
+    : []
+  const remoteRows = [...pinnedRemoteRows, ...renderRemoteNodes(remoteNodes, {
+    folderClosed,
+    onToggleFolder: toggleFolder,
+    remoteUrls: tree?.remoteUrls ?? {},
+    knownRemotes: tree?.remotes ?? [],
+    selection,
+    leafCbsFor: remoteLeafCbsFor,
+  })]
   const sep = (key: string): MenuItem => ({ key, separator: true })
   const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'stash-create'
     ? [
@@ -200,8 +294,35 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText((menu as { name: string }).name) },
       ...(menu.current ? [] : [{
         key: 'del', label: t('side.delete'), danger: true,
-        onSelect: () => onDeleteRef('branch', (menu as { name: string }).name),
+        onSelect: () => {
+          const delName = (menu as { name: string }).name
+          const delRemote = deleteRemoteFor(delName)
+          onDeleteRef('branch', delName, delRemote ?? undefined)
+        },
       }]),
+    ]
+    : menu.kind === 'remote'
+    ? [
+      // Push/rename/delete don't apply to remote-tracking refs (no local
+      // ref to push, rename or delete); checkout goes through the detached
+      // confirm flow like tags.
+      { key: 'co', label: t('menu.checkoutRemote'), onSelect: () => onCheckoutRef(menu.name, '') },
+      sep('s1'),
+      {
+        key: 'mg', label: t('side.merge'),
+        onSelect: () => onOpenModal('merge', menu.name),
+      },
+      sep('s2'),
+      {
+        key: 'nb', label: t('menu.createBranchAt'),
+        onSelect: () => onOpenModal('branch', menu.name),
+      },
+      {
+        key: 'nt', label: t('menu.createTagAt'),
+        onSelect: () => onOpenModal('tag', menu.name),
+      },
+      sep('s3'),
+      { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText(menu.name) },
     ]
     : [
       { key: 'co', label: t('menu.checkoutTag'), onSelect: () => onCheckoutRef(menu.name, '') },
@@ -296,7 +417,13 @@ interface BranchRowCbs {
   readonly t: SidebarProps['t']
 }
 
-function renderBranchRow(b: GitBranch, current: string | null, selection: SidebarSelection, cb: BranchRowCbs): JSX.Element {
+function renderBranchRow(
+  b: GitBranch,
+  current: string | null,
+  selection: SidebarSelection,
+  cb: BranchRowCbs,
+  opts?: { readonly displayName?: string; readonly depth?: number; readonly isDefault?: boolean },
+): JSX.Element {
   const isCurrent = b.name === current
   const active = selection.view === 'commits' && selection.refFilter === b.name
   const cls = `gp-branch-row${active ? ' gp-branch-row--active' : ''}${isCurrent ? ' gp-branch-row--current' : ''}`
@@ -304,9 +431,13 @@ function renderBranchRow(b: GitBranch, current: string | null, selection: Sideba
   // branch. The icon dims and the tooltip explains why; `undefined` (unknown)
   // renders normally so a remote-less repo never looks uniformly greyed.
   const localOnly = b.onRemote === false
-  const title = `${b.name}${b.shortHash ? ` (${b.shortHash})` : ''}${localOnly ? ` — ${cb.t('side.localOnly')}` : ''}`
+  const displayName = opts?.displayName ?? b.name
+  const depth = opts?.depth ?? 0
+  const isDefault = opts?.isDefault === true
+  const title = `${b.name}${b.shortHash ? ` (${b.shortHash})` : ''}${isDefault ? ` — ${cb.t('side.default')}` : ''}${localOnly ? ` — ${cb.t('side.localOnly')}` : ''}`
   return h('div', {
     key: `b-${b.name}`, className: cls, title,
+    ...(depth > 0 ? { style: { paddingLeft: 22 + depth * 14 } } : {}),
     onClick: () => cb.onSelect({ view: 'commits', refFilter: active ? null : b.name }),
     onDoubleClick: () => { if (!isCurrent) cb.onCheckout() },
     onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); cb.onMenu(e.clientX, e.clientY) },
@@ -316,9 +447,101 @@ function renderBranchRow(b: GitBranch, current: string | null, selection: Sideba
       className: `gp-row-icon${localOnly ? ' gp-row-icon--local-only' : ''}`,
       title: localOnly ? cb.t('side.localOnly') : undefined,
     }, h(BranchIcon, { size: 13 })),
-    h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
+    h('span', { key: 'n', className: 'gp-tree-name' }, displayName),
+    isDefault ? h('span', { key: 'd', className: 'gp-branch-row__default' }, cb.t('side.default')) : null,
     (b.ahead || b.behind) ? h('span', { key: 't', className: 'gp-branch-row__track' }, `${b.ahead ? `↑${b.ahead}` : ''}${b.behind ? `↓${b.behind}` : ''}`) : null,
   ])
+}
+
+function renderBranchNodes(
+  nodes: readonly BranchTreeNode[],
+  ctx: {
+    readonly current: string | null
+    readonly selection: SidebarSelection
+    readonly folderClosed: ReadonlySet<string>
+    readonly onToggleFolder: (path: string) => void
+    readonly cbsFor: (name: string) => BranchRowCbs
+  },
+): JSX.Element[] {
+  const out: JSX.Element[] = []
+  for (const node of nodes) {
+    if (node.kind === 'branch') {
+      out.push(renderBranchRow(node.branch, ctx.current, ctx.selection, ctx.cbsFor(node.branch.name), {
+        displayName: node.displayName,
+        depth: node.depth,
+      }))
+    } else {
+      const open = !ctx.folderClosed.has(node.path)
+      out.push(h('div', {
+        key: `f-${node.path}`,
+        className: 'gp-branch-folder',
+        title: node.path,
+        ...(node.depth > 0 ? { style: { paddingLeft: 22 + node.depth * 14 } } : {}),
+        onClick: () => ctx.onToggleFolder(node.path),
+      }, [
+        h(ChevronIcon, { key: 'c', size: 11, open }),
+        h('span', { key: 'i', className: 'gp-row-icon gp-branch-folder__icon' }, h(FolderIcon, { size: 13 })),
+        h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
+        h('span', { key: 'cnt', className: 'gp-branch-row__track' }, String(node.count)),
+      ]))
+      if (open) out.push(...renderBranchNodes(node.children, ctx))
+    }
+  }
+  return out
+}
+
+/**
+ * Remote-tracking refs grouped by remote name. Leaves stay non-interactive
+ * (as before); folders collapse like local ones. The top-level folder is the
+ * remote itself and carries a remote-type icon — GitHub mark for github.com
+ * endpoints, the branch glyph otherwise — instead of a folder icon. Deeper
+ * levels are ordinary folders.
+ */
+function renderRemoteNodes(
+  nodes: readonly BranchTreeNode[],
+  ctx: {
+    readonly folderClosed: ReadonlySet<string>
+    readonly onToggleFolder: (key: string) => void
+    readonly remoteUrls: Record<string, string>
+    readonly knownRemotes: readonly string[]
+    readonly selection: SidebarSelection
+    readonly leafCbsFor: (name: string) => BranchRowCbs
+  },
+): JSX.Element[] {
+  const out: JSX.Element[] = []
+  for (const node of nodes) {
+    if (node.kind === 'branch') {
+      // A remote-tracking ref is never the current branch; otherwise it
+      // behaves exactly like a local row (click filters commits, double-click
+      // confirms a detached checkout, right-click opens the remote menu).
+      out.push(renderBranchRow(node.branch, null, ctx.selection, ctx.leafCbsFor(node.branch.name), {
+        displayName: node.displayName,
+        depth: node.depth,
+      }))
+    } else {
+      const key = `remote/${node.path}`
+      const open = !ctx.folderClosed.has(key)
+      const topRemote = node.depth === 0 ? node.path.split('/')[0] ?? '' : ''
+      const known = topRemote !== '' && ctx.knownRemotes.includes(topRemote)
+      const icon = node.depth === 0 && known
+        ? (isGitHubRemote(ctx.remoteUrls[topRemote] ?? '') ? h(GitHubIcon, { size: 13 }) : h(BranchIcon, { size: 13 }))
+        : h(FolderIcon, { size: 13 })
+      out.push(h('div', {
+        key: `f-${key}`,
+        className: 'gp-branch-folder',
+        title: node.path,
+        ...(node.depth > 0 ? { style: { paddingLeft: 22 + node.depth * 14 } } : {}),
+        onClick: () => ctx.onToggleFolder(key),
+      }, [
+        h(ChevronIcon, { key: 'c', size: 11, open }),
+        h('span', { key: 'i', className: 'gp-row-icon gp-branch-folder__icon' }, icon),
+        h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
+        h('span', { key: 'cnt', className: 'gp-branch-row__track' }, String(node.count)),
+      ]))
+      if (open) out.push(...renderRemoteNodes(node.children, ctx))
+    }
+  }
+  return out
 }
 
 interface TagRowCbs {

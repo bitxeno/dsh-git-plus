@@ -26,9 +26,27 @@ describe('planAction git-plus', () => {
     const r = planAction({ kind: 'create-branch', name: 'feature/x', checkout: true }, false)
     assert.ok('argv' in r && r.argv[0][1] === 'checkout')
   })
+  it('plans create-branch with explicit track', () => {
+    const r = planAction({ kind: 'create-branch', name: 'quickgui', startPoint: 'origin/quickgui', track: true }, false)
+    assert.ok('argv' in r)
+    assert.deepEqual(r.argv, [['git', 'branch', '--track', 'quickgui', 'origin/quickgui']])
+  })
   it('rejects unsafe branch name', () => {
     const r = planAction({ kind: 'create-branch', name: '-evil' }, false)
     assert.ok('error' in r)
+  })
+  it('plans delete-branch with optional remote delete', () => {
+    const plain = planAction({ kind: 'delete-branch', name: 'foo' }, false)
+    assert.ok('argv' in plain)
+    assert.deepEqual(plain.argv, [['git', 'branch', '-d', '--end-of-options', 'foo']])
+    const full = planAction({ kind: 'delete-branch', name: 'foo', remote: 'origin' }, false)
+    assert.ok('argv' in full)
+    assert.deepEqual(full.argv, [
+      ['git', 'branch', '-d', '--end-of-options', 'foo'],
+      ['git', 'push', '--delete', '--end-of-options', 'origin', 'foo'],
+    ])
+    assert.ok('error' in planAction({ kind: 'delete-branch', name: '-evil', remote: 'origin' }, false))
+    assert.ok('error' in planAction({ kind: 'delete-branch', name: 'foo', remote: '-evil' }, false))
   })
   it('plans rename-branch', () => {
     const r = planAction({ kind: 'rename-branch', oldName: 'foo', newName: 'bar' }, false)

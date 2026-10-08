@@ -86,6 +86,12 @@ const CSS = `
 .gp-branch-row--active{background:var(--dsw-alias-interactive-bg-hover)}
 .gp-branch-row--current{color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-state-business-primary))}
 .gp-branch-row__track{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary)}
+/* Default-branch badge pinned to the first row. */
+.gp-branch-row__default{flex:none;font-size:10px;line-height:16px;padding:0 6px;border-radius:8px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);color:var(--dsw-alias-state-business-primary)}
+/* Collapsible branch folder row (a/b prefix of slash-separated names). */
+.gp-branch-folder{display:flex;align-items:center;gap:6px;min-height:30px;padding:5px 10px 5px 22px;cursor:pointer;border-radius:var(--dsw-radius-md);font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
+.gp-branch-folder:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.gp-branch-folder__icon{color:var(--dsw-alias-state-business-primary)}
 /* Leading row icon slot (branch/tag/stash rows). */
 .gp-row-icon{display:inline-flex;width:14px;flex:none}
 /* Local-only ref (no remote-tracking counterpart): dim the icon only, the name
@@ -462,6 +468,11 @@ const CSS = `
 .gp-check-row{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
 .gp-check-row input{flex:none;width:16px;height:16px;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}
 .gp-check-row--danger{color:var(--dsw-alias-state-error-primary)}
+/* delete-branch dialog: description + branch ref row (icon + mono name). */
+.gp-delbranch__desc{font-size:13px;color:var(--dsw-alias-label-secondary)}
+.gp-delbranch{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-primary)}
+.gp-delbranch__icon{display:inline-flex;flex:none;color:var(--dsw-alias-label-tertiary)}
+.gp-delbranch__name{font-family:var(--dsw-font-mono,ui-monospace,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gp-radio{display:flex;flex-direction:column;gap:8px}
 .gp-btn--primary{background:var(--dsw-alias-state-business-primary,#5ac8fa);color:#fff;border-radius:8px;padding:6px 14px}
 .gp-rail{display:flex;flex-direction:column;overflow:auto}

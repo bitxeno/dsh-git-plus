@@ -17,6 +17,19 @@ export declare function parseStatus(stdout: string): GitChange[];
 export declare function parseGraphLog(stdout: string): GraphCommit[];
 /** Parse the `%D` decoration into structured refs. */
 export declare function parseRefs(decoration: string): GitRef[];
+/**
+ * Strip one known namespace prefix from a full refname
+ * (`refs/heads/Go` → `Go`). The caller queries one namespace at a time, so a
+ * single strip is exact — including a branch literally named `heads/foo`
+ * (`refs/heads/heads/foo` → `heads/foo`). Anything without the prefix passes
+ * through untouched.
+ *
+ * Why not `%(refname:short)`: `:short` is the *shortest unambiguous*
+ * abbreviation, so a branch collides into a longer form whenever another ref
+ * reads the same short (e.g. branch `Go` vs tag `go` yields `heads/Go`,
+ * and the tag yields `tags/go`). Full names have no such aliasing.
+ */
+export declare function stripRefNamespace(refname: string, namespace: 'heads' | 'remotes' | 'tags'): string;
 /** Parse `git for-each-ref` branch lines: `name\0shortHash\0track\0upstream`. */
 export declare function parseBranches(stdout: string): GitBranch[];
 /**
@@ -37,6 +50,12 @@ export declare function parseBranches(stdout: string): GitBranch[];
  * added but never fetched or pushed to (nothing of ours is on it yet).
  */
 export declare function markRemotePresence(local: readonly GitBranch[], remote: readonly GitBranch[] | null, remotes: readonly string[]): GitBranch[];
+/**
+ * Parse `git remote -v` (`<name>\t<url> (fetch|push)` per line) into one URL
+ * per remote, preferring the fetch URL; a push-only line fills in when fetch
+ * is absent. Drives the sidebar's per-remote (GitHub vs plain git) icons.
+ */
+export declare function parseRemoteUrls(stdout: string): Record<string, string>;
 /** Parse `git for-each-ref` tag lines: `name\0shortHash` per line. */
 export declare function parseTags(stdout: string): GitBranch[];
 /**

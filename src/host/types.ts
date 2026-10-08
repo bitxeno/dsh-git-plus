@@ -152,8 +152,8 @@ export type GitAction =
     readonly tag?: string
     readonly force?: boolean
   }
-  | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean }
-  | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean }
+  | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean; /** Set an upstream when creating (`--track`). */ readonly track?: boolean }
+  | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean; /** Also delete `<name>` on `<remote>` (`git push <remote> --delete`). */ readonly remote?: string }
   | { readonly kind: 'rename-branch'; readonly oldName: string; readonly newName: string }
   | {
     readonly kind: 'create-tag'
@@ -301,7 +301,7 @@ export type GitQueryResult =
     readonly body: string
     readonly stats: readonly GitFileStat[]
   }
-  | { readonly kind: 'branches'; readonly current: string | null; readonly defaultBranch: string | null; readonly local: readonly GitBranch[]; readonly remote: readonly GitBranch[]; readonly remotes: readonly string[] }
+  | { readonly kind: 'branches'; readonly current: string | null; readonly defaultBranch: string | null; readonly local: readonly GitBranch[]; readonly remote: readonly GitBranch[]; readonly remotes: readonly string[]; readonly remoteUrls: Record<string, string> }
   | { readonly kind: 'tags'; readonly tags: readonly GitBranch[] }
   | { readonly kind: 'authors'; readonly authors: readonly string[] }
   | { readonly kind: 'last-commit-message'; readonly message: string }
