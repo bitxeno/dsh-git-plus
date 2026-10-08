@@ -6,7 +6,7 @@ import { createElement as h, useCallback, useEffect, useMemo, useRef, useState }
 import type { JSX } from 'react'
 import type { GitPanelRemote } from './rpc'
 import { queryAs } from './rpc'
-import type { GitAction, GitChange, GitSnapshot } from './types'
+import type { DirEntry, GitAction, GitChange, GitSnapshot } from './types'
 import type { GitKey } from './locales'
 import { ChangeStats } from './ChangeStats'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
@@ -56,15 +56,105 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   const [diffMode, setDiffMode] = useState<DiffMode>(() => snapshot.defaultDiffView)
   const [expanded, setExpanded] = useState(false)
   const [amendPrefilled, setAmendPrefilled] = useState(false)
+  // On-demand worktree listings under expanded untracked-dir leaves
+  // (`git status` collapses such dirs to one entry, so the tree cannot show
+  // their files from the snapshot alone). Keyed `s:<dir>` / `w:<dir>`.
+  const [listedDirs, setListedDirs] = useState<ReadonlyMap<string, { entries: readonly DirEntry[]; truncated: boolean }>>(new Map())
+  const [listingDirs, setListingDirs] = useState<ReadonlySet<string>>(new Set())
   const diffSeq = useRef(0)
+  const fetchedAt = useRef(new Map<string, number>())
 
   // Two blocks like the reference layout: Unstaged (tracked + untracked,
   // anything not staged) first, then Staged.
   const staged = useMemo(() => snapshot.changes.filter((c) => c.staged).sort(byPath), [snapshot])
   const unstaged = useMemo(() => snapshot.changes.filter((c) => !c.staged).sort(byPath), [snapshot])
 
-  const stagedTree = useMemo(() => buildFileTree(staged.map((c) => ({ path: c.path, meta: c }))), [staged])
-  const unstagedTree = useMemo(() => buildFileTree(unstaged.map((c) => ({ path: c.path, meta: c }))), [unstaged])
+  const stagedTree = useMemo(() => buildFileTree(staged.map((c) => ({ path: c.path, meta: c, ...(c.isDirectory ? { dir: true } : {}) }))), [staged])
+  const unstagedTree = useMemo(() => buildFileTree(unstaged.map((c) => ({ path: c.path, meta: c, ...(c.isDirectory ? { dir: true } : {}) }))), [unstaged])
+
+  /**
+   * Splice cached worktree listings under directory-change nodes. Nested
+   * listed subdirs attach their own listings the same way (their synthetic
+   * nodes carry a change payload, so the recursion terminates at unlisted
+   * dirs). Ignored entries are filtered: they are not changes.
+   */
+  const attachListings = (nodes: readonly FileTreeNode[], sideKey: string): FileTreeNode[] => nodes.map((node) => {
+    if (!node.dir) return node
+    const kids = attachListings(node.children, sideKey)
+    const dirChange = dirChangeOf(node)
+    const cached = dirChange !== null ? listedDirs.get(`${sideKey}:${node.path}`) : undefined
+    if (dirChange === null || cached === undefined) return { ...node, children: kids }
+    const synth: FileTreeNode[] = cached.entries.map((e) => {
+      const change: GitChange = {
+        path: `${node.path}/${e.name}`,
+        status: dirChange.status,
+        staged: sideKey === 's',
+        isDirectory: e.dir,
+      }
+      return { name: e.name, path: change.path, dir: e.dir, children: [], meta: change }
+    })
+    return { ...node, children: [...kids, ...attachListings(synth, sideKey)] }
+  })
+
+  const stagedFull = useMemo(() => attachListings(stagedTree, 's'), [stagedTree, listedDirs])
+  const unstagedFull = useMemo(() => attachListings(unstagedTree, 'w'), [unstagedTree, listedDirs])
+
+  const fetchListing = async (dirKey: string): Promise<void> => {
+    setListingDirs((prev) => new Set(prev).add(dirKey))
+    try {
+      const res = await remote.query({ sessionId, query: { kind: 'dir-list', path: dirKey.slice(2) } })
+      const v = queryAs(res, 'dir-list')
+      if (v !== null) {
+        setListedDirs((prev) => new Map(prev).set(dirKey, {
+          entries: v.entries.filter((e) => !e.ignored),
+          truncated: v.truncated,
+        }))
+      }
+    } finally {
+      setListingDirs((prev) => {
+        const next = new Set(prev)
+        next.delete(dirKey)
+        return next
+      })
+    }
+  }
+
+  /**
+   * Keep expanded directory listings live: fetch open directory-change nodes
+   * (nested ones surface through the attached trees), refresh them on every
+   * snapshot tick, and drop listings for closed or vanished dirs. In-flight
+   * fetches are never duplicated and cached rows stay visible during refresh.
+   */
+  useEffect(() => {
+    const keys: string[] = []
+    const walk = (nodes: readonly FileTreeNode[], sideKey: string): void => {
+      for (const node of nodes) {
+        if (!node.dir) continue
+        if (dirChangeOf(node) !== null && !closedDirs.has(`${sideKey}:${node.path}`)) keys.push(`${sideKey}:${node.path}`)
+        walk(node.children, sideKey)
+      }
+    }
+    walk(stagedFull, 's')
+    walk(unstagedFull, 'w')
+    setListedDirs((prev) => {
+      if ([...prev.keys()].every((k) => keys.includes(k))) return prev
+      const next = new Map(prev)
+      for (const k of [...next.keys()]) {
+        if (!keys.includes(k)) {
+          next.delete(k)
+          fetchedAt.current.delete(k)
+        }
+      }
+      return next
+    })
+    for (const key of keys) {
+      if (listingDirs.has(key)) continue
+      if (listedDirs.has(key) && fetchedAt.current.get(key) === snapshot.checkedAt) continue
+      fetchedAt.current.set(key, snapshot.checkedAt)
+      void fetchListing(key)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, closedDirs, stagedFull, unstagedFull, listingDirs])
 
   // Prune the active folder key when it disappears from the snapshot.
   useEffect(() => {
@@ -72,8 +162,10 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
     const sep = activeDir.indexOf(':')
     const side = activeDir.slice(0, sep)
     const dir = activeDir.slice(sep + 1)
+    // Either direction counts: the dir itself (or something under it) is a
+    // snapshot entry, or it is a listed subdirectory of a live dir entry.
     const alive = snapshot.changes.some((c) =>
-      (side === 's') === c.staged && (c.path === dir || c.path.startsWith(dir + '/')))
+      (side === 's') === c.staged && (c.path === dir || c.path.startsWith(dir + '/') || (c.isDirectory && dir.startsWith(c.path + '/'))))
     if (!alive) setActiveDir(null)
   }, [snapshot, activeDir])
 
@@ -110,11 +202,25 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   // keep the old text visible during the refetch to avoid a Loading flash.
   useEffect(() => {
     if (diffPath === null) return
-    const stillThere = snapshot.changes.some((c) => c.path === diffPath.path)
-    if (!stillThere) { setDiffPath(null); setDiffText(null); return }
+    const p = diffPath.path
+    const inSnapshot = snapshot.changes.some((c) => c.path === p)
+    // Synthetic rows under an expanded untracked dir are not snapshot
+    // entries: they stay alive while an ancestor dir entry is listed and the
+    // listing still contains them.
+    let listed = false
+    if (!inSnapshot) {
+      for (const [key, listing] of listedDirs) {
+        const dir = key.slice(2)
+        if (!p.startsWith(dir + '/')) continue
+        if (!snapshot.changes.some((c) => c.isDirectory && p.startsWith(c.path + '/'))) continue
+        const first = p.slice(dir.length + 1).split('/')[0]
+        if (first !== undefined && listing.entries.some((e) => e.name === first)) { listed = true; break }
+      }
+    }
+    if (!inSnapshot && !listed) { setDiffPath(null); setDiffText(null); return }
     void showDiff(diffPath.path, diffPath.base, expanded, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot])
+  }, [snapshot, listedDirs])
 
   // Disarm a pending discard confirmation when the snapshot changes (the row
   // may be gone) so the destructive "click again" state can't linger.
@@ -161,12 +267,18 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
 
   /** All changed-file paths under a tree node (the node itself if a file). */
   const collectLeafPaths = (node: FileTreeNode): string[] => {
+    const dirChange = dirChangeOf(node)
+    // A directory change stages as one dir pathspec (complete even past the
+    // listing cap), so never descend into it.
+    if (dirChange !== null) return [dirChange.path]
     if (!node.dir) return [(node.meta as GitChange).path]
     return node.children.flatMap(collectLeafPaths)
   }
 
   /** All change entries under a tree node (the node itself if a file). */
   const collectLeafChanges = (node: FileTreeNode): GitChange[] => {
+    const dirChange = dirChangeOf(node)
+    if (dirChange !== null) return [dirChange]
     if (!node.dir) return [node.meta as GitChange]
     return node.children.flatMap(collectLeafChanges)
   }
@@ -244,6 +356,20 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
             ]),
           ]))
         if (open) out.push(...renderTree(node.children, depth + 1, stagedSide))
+        // Untracked-dir leaves have no snapshot children; their rows come
+        // from the on-demand listing (loading / truncated notes included).
+        if (open && dirChangeOf(node) !== null) {
+          const cached = listedDirs.get(dirKey)
+          const note = (key: string, text: string): JSX.Element => h('div', {
+            key, className: 'gp-tree-row gp-tree-row--muted',
+            style: { paddingLeft: 10 + (depth + 1) * 16 },
+          }, text)
+          if (cached === undefined) {
+            if (listingDirs.has(dirKey)) out.push(note(`ld:${dirKey}`, t('common.loading')))
+          } else if (cached.truncated) {
+            out.push(note(`tr:${dirKey}`, t('files.truncated')))
+          }
+        }
       } else {
         const c = node.meta as GitChange
         const rowKey = c.path + (c.staged ? ':s' : ':w')
@@ -330,12 +456,12 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
         snapshot.changes.length === 0
           ? h('div', { className: 'gp-empty' }, t('changes.noChanges'))
           : [
-            renderGroup('unstaged', t('changes.groupUnstaged'), unstagedTree, false, unstaged.length, { flex: unstagedFlex }),
+            renderGroup('unstaged', t('changes.groupUnstaged'), unstagedFull, false, unstaged.length, { flex: unstagedFlex }),
             showRowDivider ? h('div', {
               key: 'rz', className: 'gp-rowresizer', role: 'separator', 'aria-orientation': 'horizontal',
               onPointerDown: split.dividerProps.onPointerDown,
             }) : null,
-            renderGroup('staged', t('changes.groupStaged'), stagedTree, true, staged.length, { flex: stagedFlex }),
+            renderGroup('staged', t('changes.groupStaged'), stagedFull, true, staged.length, { flex: stagedFlex }),
           ]),
       // commit box
       h('div', { key: 'box', className: 'gp-commitbox' }, [
@@ -389,6 +515,16 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
 
 function byPath(a: GitChange, b: GitChange): number {
   return a.path.localeCompare(b.path)
+}
+
+/**
+ * A tree node that is itself a directory change (a collapsed untracked dir
+ * from the snapshot, or a listed subdirectory synthesized below one).
+ * Intermediate folders never carry a change payload.
+ */
+function dirChangeOf(node: FileTreeNode): GitChange | null {
+  const meta = node.meta as GitChange | undefined
+  return node.dir && meta !== undefined && meta.isDirectory === true ? meta : null
 }
 
 interface RowActions {

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -234,6 +234,27 @@ describe('parseAuthors', () => {
   it('tolerates missing emails and blank lines', () => {
     assert.deepEqual(parseAuthors(''), [])
     assert.deepEqual(parseAuthors(`solo\n${N}\n`), [{ name: 'solo', email: '' }])
+  })
+})
+
+describe('partitionUntracked', () => {
+  // Second arg mirrors discardUntracked's input: snapshot changes already
+  // filtered to status untracked.
+  const untracked = [
+    { path: 'docs/image', isDirectory: true },
+    { path: 'new.txt', isDirectory: false },
+  ]
+  it('matches exact entries and paths under untracked dirs', () => {
+    assert.deepEqual(
+      partitionUntracked(['docs/image', 'docs/image/a.png', 'new.txt', 'tracked.txt'], untracked),
+      { untracked: ['docs/image', 'docs/image/a.png', 'new.txt'], tracked: ['tracked.txt'] },
+    )
+  })
+  it('does not match sibling prefixes', () => {
+    assert.deepEqual(
+      partitionUntracked(['docs/imagery/x.png'], untracked),
+      { untracked: [], tracked: ['docs/imagery/x.png'] },
+    )
   })
 })
 

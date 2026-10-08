@@ -408,6 +408,31 @@ async function appendGitignore(
   return { ok: true, snapshot: snapshot.value, output: fresh.join('\n') }
 }
 
+/**
+ * Split discard paths into untracked (removed from disk) vs tracked (git
+ * restore). A path inside an untracked directory entry is itself untracked,
+ * covering rows the client synthesizes by expanding such dirs (they are not
+ * snapshot entries, so an exact match alone would misroute them to restore).
+ */
+export function partitionUntracked(
+  paths: readonly string[],
+  untracked: readonly { readonly path: string; readonly isDirectory: boolean }[],
+): { untracked: string[]; tracked: string[] } {
+  const exact = new Set<string>()
+  const dirs: string[] = []
+  for (const c of untracked) {
+    exact.add(c.path)
+    if (c.isDirectory) dirs.push(c.path)
+  }
+  const un: string[] = []
+  const tr: string[] = []
+  for (const p of paths) {
+    if (exact.has(p) || dirs.some((d) => p.startsWith(d + '/'))) un.push(p)
+    else tr.push(p)
+  }
+  return { untracked: un, tracked: tr }
+}
+
 async function discardUntracked(
   deps: SnapshotDeps,
   config: GitPanelConfig,
@@ -417,10 +442,11 @@ async function discardUntracked(
 ): Promise<null | { ok: true; remainingTracked: readonly string[] } | { ok: false; result: GitActionResult }> {
   const snap = await snapshotForSession(deps, config, sessionId)
   if (!snap.ok) return null
-  const untrackedSet = new Set(snap.value.changes.filter((c) => c.status === 'untracked').map((c) => c.path))
-  const untracked = paths.filter((p) => untrackedSet.has(p))
+  const { untracked, tracked } = partitionUntracked(
+    paths,
+    snap.value.changes.filter((c) => c.status === 'untracked'),
+  )
   if (untracked.length === 0) return null
-  const tracked = paths.filter((p) => !untrackedSet.has(p))
   let rootReal: string
   try {
     rootReal = await deps.fs.realpath(root)

@@ -12,6 +12,9 @@ export interface FileTreeNode {
 interface Leaf {
   readonly path: string
   readonly meta?: unknown
+  /** The leaf itself is a directory (e.g. a collapsed untracked dir from
+   * `git status`, which reports `dir/` as one entry). */
+  readonly dir?: boolean
 }
 
 /** Fold flat leaves into a directory tree, collapsing single-child chains. */
@@ -25,9 +28,12 @@ export function buildFileTree(leaves: readonly Leaf[]): FileTreeNode[] {
       const seg = segments[i]!
       acc = acc === '' ? seg : `${acc}/${seg}`
       const isLeaf = i === segments.length - 1
-      let child = node.children.find((c) => c.name === seg && c.dir === !isLeaf)
+      // A directory leaf stays a directory node (with its payload); file
+      // leaves and intermediate segments behave exactly as before.
+      const dir = !isLeaf || leaf.dir === true
+      let child = node.children.find((c) => c.name === seg && c.dir === dir)
       if (child === undefined) {
-        child = { name: seg, path: acc, dir: !isLeaf, children: [], ...(isLeaf ? { meta: leaf.meta } : {}) }
+        child = { name: seg, path: acc, dir, children: [], ...(isLeaf ? { meta: leaf.meta } : {}) }
         node.children.push(child)
       }
       node = child
@@ -52,7 +58,12 @@ function collapse(nodes: FileTreeNode[]): FileTreeNode[] {
     let current = node
     while (current.children.length === 1 && current.children[0]!.dir) {
       const only = current.children[0]!
-      current = { name: `${current.name}/${only.name}`, path: only.path, dir: true, children: only.children }
+      // Carry the payload when folding into a childless directory leaf, so a
+      // collapsed `docs/image` still knows it is the untracked-dir change.
+      current = {
+        name: `${current.name}/${only.name}`, path: only.path, dir: true, children: only.children,
+        ...(only.children.length === 0 && only.meta !== undefined ? { meta: only.meta } : {}),
+      }
     }
     return { ...current, children: collapse(current.children) }
   })

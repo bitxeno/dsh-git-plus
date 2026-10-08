@@ -28,3 +28,16 @@ export declare function pickDefaultRemote(names: readonly string[]): string | nu
 export declare function resolvePushRemote(deps: SnapshotDeps, root: string): Promise<string | null>;
 /** Execute a management action, returning the fresh snapshot on success. */
 export declare function runAction(deps: SnapshotDeps, config: GitPanelConfig, request: GitActionRequest): Promise<GitActionResult>;
+/**
+ * Split discard paths into untracked (removed from disk) vs tracked (git
+ * restore). A path inside an untracked directory entry is itself untracked,
+ * covering rows the client synthesizes by expanding such dirs (they are not
+ * snapshot entries, so an exact match alone would misroute them to restore).
+ */
+export declare function partitionUntracked(paths: readonly string[], untracked: readonly {
+    readonly path: string;
+    readonly isDirectory: boolean;
+}[]): {
+    untracked: string[];
+    tracked: string[];
+};
