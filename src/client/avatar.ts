@@ -100,6 +100,16 @@ export function isGitHubRemote(url: string): boolean {
   return /github\.com[:/]/i.test(url.trim())
 }
 
+/**
+ * Deterministic hue (0–359) for an author's fallback initial-circle, so the
+ * default avatar is stable per name without any network or storage.
+ */
+export function avatarHueFor(name: string): number {
+  let hue = 0
+  for (const ch of name) hue = (hue * 31 + ch.codePointAt(0)!) % 360
+  return hue
+}
+
 export interface GitHubRepo {
   readonly owner: string
   readonly repo: string

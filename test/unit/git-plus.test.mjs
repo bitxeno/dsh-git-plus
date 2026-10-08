@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -219,6 +219,21 @@ describe('ignore patterns', () => {
   it('derives dir patterns with a trailing slash', () => {
     assert.equal(ignorePatternForDir('dist'), 'dist/')
     assert.equal(ignorePatternForDir('a/b/'), 'a/b/')
+  })
+})
+
+describe('parseAuthors', () => {
+  const N = String.fromCharCode(0)
+  it('dedups by name keeping the first email, sorted', () => {
+    const out = parseAuthors(`bob${N}b@x.io\nAlice${N}a@x.io\nbob${N}b2@x.io\n\n`)
+    assert.deepEqual(out, [
+      { name: 'Alice', email: 'a@x.io' },
+      { name: 'bob', email: 'b@x.io' },
+    ])
+  })
+  it('tolerates missing emails and blank lines', () => {
+    assert.deepEqual(parseAuthors(''), [])
+    assert.deepEqual(parseAuthors(`solo\n${N}\n`), [{ name: 'solo', email: '' }])
   })
 })
 

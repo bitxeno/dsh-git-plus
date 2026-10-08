@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { authorAvatarUrl, extractRepoAvatars, githubUsernameFromNoreply, gravatarUrlFor, isGhPathName, isGitHubRemote, md5Hex, parseGitHubRepo, parseGraphLog } from '../../lib/testkit.mjs'
+import { authorAvatarUrl, avatarHueFor, extractRepoAvatars, githubUsernameFromNoreply, gravatarUrlFor, isGhPathName, isGitHubRemote, md5Hex, parseGitHubRepo, parseGraphLog } from '../../lib/testkit.mjs'
 
 describe('md5Hex', () => {
   it('matches known vectors', () => {
@@ -81,5 +81,18 @@ describe('extractRepoAvatars / isGhPathName', () => {
     assert.equal(isGhPathName('../x'), false)
     assert.equal(isGhPathName('a/b'), false)
     assert.equal(isGhPathName(''), false)
+  })
+})
+
+describe('avatarHueFor', () => {
+  it('is deterministic and inside 0-359', () => {
+    for (const name of ['alice', 'Bob', '陈', '']) {
+      const h = avatarHueFor(name)
+      assert.ok(Number.isInteger(h) && h >= 0 && h < 360)
+      assert.equal(avatarHueFor(name), h)
+    }
+  })
+  it('separates distinct names', () => {
+    assert.notEqual(avatarHueFor('alice'), avatarHueFor('bob'))
   })
 })

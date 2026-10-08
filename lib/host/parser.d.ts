@@ -2,7 +2,7 @@
  * git output parsers: porcelain status, log, branch, numstat, name-status.
  * Pure functions over raw stdout, no I/O.
  */
-import type { GitBranch, GitChange, GitFileStat, GraphCommit, GitRef, StashEntry } from './types.ts';
+import type { GitBranch, GitChange, GitFileStat, GraphCommit, GitRef, StashEntry, AuthorInfo } from './types.ts';
 /**
  * Parse `git status --porcelain=v1 -z`. A mixed XY (both non-space, e.g. MM)
  * is split into a staged side (X) and an unstaged side (Y). Untracked (??) is
@@ -58,6 +58,8 @@ export declare function markRemotePresence(local: readonly GitBranch[], remote: 
 export declare function parseRemoteUrls(stdout: string): Record<string, string>;
 /** Parse `git for-each-ref` tag lines: `name\0shortHash` per line. */
 export declare function parseTags(stdout: string): GitBranch[];
+/** Parse `git log --format=%an%x00%ae` author lines: first-seen email wins. */
+export declare function parseAuthors(stdout: string): AuthorInfo[];
 /**
  * Parse `git show --name-status -z` into stats with an explicit state machine:
  * read a status token, then consume exactly the paths it owns (2 for R/C, 1

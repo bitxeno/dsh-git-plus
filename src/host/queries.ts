@@ -7,7 +7,7 @@ import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { isSafePath, isSafeRev } from './validate.ts'
-import { parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence, parseRemoteUrls, stripRefNamespace } from './parser.ts'
+import { parseAuthors, parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence, parseRemoteUrls, stripRefNamespace } from './parser.ts'
 import { extractRepoAvatars, getCachedAvatars, isGhPathName, setCachedAvatars } from './github.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
 import { imageMimeFor } from './types.ts'
@@ -598,10 +598,8 @@ async function queryTags(deps: SnapshotDeps, root: string): Promise<GitQueryResp
 }
 
 async function queryAuthors(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
-  const res = await runCommand(deps.run, ['git', 'log', '--all', '--format=%an', '--max-count=2000'], root, 'authors', deps.signal)
-  const authors = 'run' in res && res.run.exitCode === 0
-    ? [...new Set(res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== ''))].sort((a, b) => a.localeCompare(b))
-    : []
+  const res = await runCommand(deps.run, ['git', 'log', '--all', '--format=%an%x00%ae', '--max-count=2000'], root, 'authors', deps.signal)
+  const authors = 'run' in res && res.run.exitCode === 0 ? parseAuthors(res.run.stdout) : []
   return { ok: true, value: { kind: 'authors', authors } }
 }
 

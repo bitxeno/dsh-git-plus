@@ -2,7 +2,7 @@
  * git output parsers: porcelain status, log, branch, numstat, name-status.
  * Pure functions over raw stdout, no I/O.
  */
-import type { GitBranch, GitChange, GitChangeStatus, GitFileStat, GraphCommit, GitRef, StashEntry } from './types.ts'
+import type { GitBranch, GitChange, GitChangeStatus, GitFileStat, GraphCommit, GitRef, StashEntry, AuthorInfo } from './types.ts'
 
 /** Map a porcelain single-column status char to our status vocabulary. */
 function statusOf(code: string): GitChangeStatus {
@@ -232,6 +232,23 @@ export function parseTags(stdout: string): GitBranch[] {
     if (name) out.push({ name, shortHash: shortHash === '' ? null : shortHash })
   }
   return out
+}
+
+/** Parse `git log --format=%an%x00%ae` author lines: first-seen email wins. */
+export function parseAuthors(stdout: string): AuthorInfo[] {
+  const seen = new Map<string, string>()
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '') continue
+    const nul = trimmed.indexOf('\0')
+    const name = (nul >= 0 ? trimmed.slice(0, nul) : trimmed).trim()
+    const email = (nul >= 0 ? trimmed.slice(nul + 1) : '').trim()
+    if (name === '' || seen.has(name)) continue
+    seen.set(name, email)
+  }
+  return [...seen.entries()]
+    .map(([name, email]) => ({ name, email }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /**

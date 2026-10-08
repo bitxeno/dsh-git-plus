@@ -23,8 +23,11 @@ import { absoluteDateTime, absoluteTime, timeAgo } from './time'
 import { statusChar, statusClass } from './status'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
 import { ContextMenu, copyText } from './ContextMenu'
+import { AuthorAvatar } from './AuthorAvatar'
+import { DropSelect } from './DropSelect'
 import { Tip } from './Tip'
 import { authorAvatarUrl, isGitHubRemote, parseGitHubRepo } from './avatar'
+import { IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useGitHubAvatarMap } from './github-avatars'
 import { useBranchTree, useCommitDetail, useHistory, type HistoryFilter } from './overview-hooks'
 import { segButtons } from './seg'
@@ -246,22 +249,28 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
         key: 'search', className: 'gp-search', placeholder: t(searchNarrow ? 'overview.searchShort' : 'overview.search'), value: searchInput,
         onChange: (e: { target: { value: string } }) => setSearchInput(e.target.value),
       }),
-      h('select', {
-        key: 'author', className: 'gp-select', value: filter.author,
-        onChange: (e: { target: { value: string } }) => setFilter((prev) => ({ ...prev, author: e.target.value })),
-      }, [
-        h('option', { key: '', value: '' }, t('overview.allUsers')),
-        ...authors.map((a) => h('option', { key: a, value: a }, a)),
-      ]),
-      h('select', {
-        key: 'since', className: 'gp-select', value: filter.since,
-        onChange: (e: { target: { value: string } }) => setFilter((prev) => ({ ...prev, since: e.target.value })),
-      }, [
-        h('option', { key: '', value: '' }, t('overview.allTime')),
-        h('option', { key: 'today', value: '1 day ago' }, t('overview.today')),
-        h('option', { key: '7d', value: '7 days ago' }, t('overview.last7d')),
-        h('option', { key: '30d', value: '30 days ago' }, t('overview.last30d')),
-      ]),
+      h(DropSelect, {
+        key: 'author', value: filter.author,
+        options: [
+          { value: '', label: t('overview.allUsers'), icon: h(IconUsersOutlineRegular, { size: 14 }) },
+          ...authors.map((a) => ({
+            value: a.name,
+            label: a.name,
+            icon: h(AuthorAvatar, { name: a.name, url: authorAvatarUrl(a.email, 36, isGitHub) }),
+          })),
+        ],
+        onChange: (v: string) => setFilter((prev) => ({ ...prev, author: v })),
+      }),
+      h(DropSelect, {
+        key: 'since', value: filter.since,
+        options: [
+          { value: '', label: t('overview.allTime') },
+          { value: '1 day ago', label: t('overview.today') },
+          { value: '7 days ago', label: t('overview.last7d') },
+          { value: '30 days ago', label: t('overview.last30d') },
+        ],
+        onChange: (v: string) => setFilter((prev) => ({ ...prev, since: v })),
+      }),
       h(Tip, {
         key: 'fetch', label: t('overview.fetch'),
         children: h('button', { type: 'button', className: 'gp-icon-btn', onClick: () => { void remote.run({ sessionId, action: { kind: 'fetch' } }).then(() => reloadTree()) } }, h(RefreshIcon, { size: 14 })),

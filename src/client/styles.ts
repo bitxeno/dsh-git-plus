@@ -122,9 +122,17 @@ const CSS = `
 .gp-search{flex:1;min-width:60px;height:32px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;padding:0 10px;box-sizing:border-box}
 .gp-search::placeholder{color:var(--dsw-alias-label-dimmed)}
 .gp-search:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
-.gp-select{height:32px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;padding:0 24px 0 10px;appearance:none;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;cursor:pointer}
-.gp-select:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
-.gp-select:disabled{opacity:.5;cursor:not-allowed}
+/* DropSelect trigger: select metrics (32px, layer-1 fill, l4 hairline) with a
+ * flex label + official chevron; the popup itself is the official Menu card. */
+.gp-dropselect{box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:32px;padding:0 8px 0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;cursor:pointer}
+.gp-dropselect:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}
+.gp-dropselect:disabled{opacity:.5;cursor:not-allowed}
+.gp-dropselect__label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+/* Portaled Menu card hook (official Menu offers no row-count cap; its own
+ * scroll region stops just short of 100vh). The card's first block child is
+ * the scroll container — cap it so long lists (e.g. authors) scroll after
+ * ~9 rows instead of stretching full-screen. Short lists are unaffected. */
+.gp-dropselect__list > div{max-height:300px;overflow-y:auto}
 
 /* commit detail (right pane): the changed-file tree and the commit message
  * split the column in half, each scrolling on its own. Equal halves keep the
@@ -528,6 +536,8 @@ const CSS = `
 /* author cell: avatar + truncated name */
 .gp-commit-author{display:flex;align-items:center;gap:6px;min-width:0}
 .ggp-avatar{width:18px;height:18px;border-radius:50%;flex:none}
+/* default avatar: initial-circle with a per-name hue (inline background). */
+.gp-avatar-fallback{width:18px;height:18px;border-radius:50%;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;user-select:none}
 .ggp-commit__author{align-items:center}
 .ggp-authorname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* ref badges with colored accent bar (git-graph-plus) */

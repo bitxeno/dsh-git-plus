@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitPanelRemote } from './rpc'
 import { queryAs } from './rpc'
-import type { GitBranch, GitCommit, GitFileStat, GraphCommit } from './types'
+import type { GitBranch, GitCommit, GitFileStat, GraphCommit, AuthorInfo } from './types'
 import type { DiffMode } from './DiffView'
 import type { DiffViewMode } from './types'
 
@@ -36,12 +36,12 @@ type CommitDetail = { commit: GitCommit | null; body: string; stats: readonly Gi
 export function useBranchTree(remote: GitPanelRemote, sessionId: string, refreshKey: number): {
   tree: BranchTree | null
   treeError: boolean
-  authors: readonly string[]
+  authors: readonly AuthorInfo[]
   reload: () => void
 } {
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [treeError, setTreeError] = useState(false)
-  const [authors, setAuthors] = useState<readonly string[]>([])
+  const [authors, setAuthors] = useState<readonly AuthorInfo[]>([])
 
   const reload = useCallback(() => {
     setTreeError(false)

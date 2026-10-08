@@ -249,6 +249,12 @@ export interface DirEntry {
   readonly ignored?: boolean
 }
 
+/** One author from `git log`: display name plus first-seen email (avatar lookup). */
+export interface AuthorInfo {
+  readonly name: string
+  readonly email: string
+}
+
 export interface GitFileStat {
   readonly path: string
   readonly status: GitChangeStatus
@@ -303,7 +309,7 @@ export type GitQueryResult =
   }
   | { readonly kind: 'branches'; readonly current: string | null; readonly defaultBranch: string | null; readonly local: readonly GitBranch[]; readonly remote: readonly GitBranch[]; readonly remotes: readonly string[]; readonly remoteUrls: Record<string, string> }
   | { readonly kind: 'tags'; readonly tags: readonly GitBranch[] }
-  | { readonly kind: 'authors'; readonly authors: readonly string[] }
+  | { readonly kind: 'authors'; readonly authors: readonly AuthorInfo[] }
   | { readonly kind: 'last-commit-message'; readonly message: string }
   | { readonly kind: 'worktree-stats'; readonly stats: WorktreeStats }
   | { readonly kind: 'dir-list'; readonly path: string; readonly entries: readonly DirEntry[]; readonly truncated: boolean }

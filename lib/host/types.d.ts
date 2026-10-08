@@ -316,6 +316,11 @@ export interface DirEntry {
     readonly size?: number;
     readonly ignored?: boolean;
 }
+/** One author from `git log`: display name plus first-seen email (avatar lookup). */
+export interface AuthorInfo {
+    readonly name: string;
+    readonly email: string;
+}
 export interface GitFileStat {
     readonly path: string;
     readonly status: GitChangeStatus;
@@ -386,7 +391,7 @@ export type GitQueryResult = {
     readonly tags: readonly GitBranch[];
 } | {
     readonly kind: 'authors';
-    readonly authors: readonly string[];
+    readonly authors: readonly AuthorInfo[];
 } | {
     readonly kind: 'last-commit-message';
     readonly message: string;

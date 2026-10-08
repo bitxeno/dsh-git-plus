@@ -9,6 +9,7 @@ import { queryAs, type GitPanelRemote } from '../rpc'
 import type { GitAction, GitBranch } from '../types'
 import type { GitKey } from '../locales'
 import { BranchIcon } from '../icons'
+import { DropSelect } from '../DropSelect'
 import { Field, ModalFooter, ModalShell } from './shell'
 
 interface BranchData {
@@ -87,11 +88,12 @@ function RemoteSelect(props: {
 }): JSX.Element {
   return h(Field, {
     label: props.label,
-    children: h('select', {
-      className: 'gp-select',
-      value: props.value, disabled: props.disabled === true || props.remotes.length === 0,
-      onChange: (e: { target: { value: string } }) => props.onChange(e.target.value),
-    }, props.remotes.map((r) => h('option', { key: r, value: r }, r))),
+    children: h(DropSelect, {
+      value: props.value,
+      options: props.remotes.map((r) => ({ value: r, label: r })),
+      disabled: props.disabled === true || props.remotes.length === 0,
+      onChange: props.onChange,
+    }),
   })
 }
 
@@ -158,14 +160,14 @@ export function PullModal(props: SyncModalProps): JSX.Element {
       }),
       h(Field, {
         key: 'b', label: props.t('modal.branch'), children:
-          h('select', {
-            className: 'gp-select',
+          h(DropSelect, {
             value: branch, disabled: remoteBranches.length === 0,
-            onChange: (e: { target: { value: string } }) => setPickedBranch(e.target.value),
-          }, [
-            ...(branch === '' ? [h('option', { key: '_', value: '' }, props.t('modal.selectBranch'))] : []),
-            ...remoteBranches.map((b) => h('option', { key: b, value: b }, b)),
-          ]),
+            options: [
+              ...(branch === '' ? [{ value: '', label: props.t('modal.selectBranch') }] : []),
+              ...remoteBranches.map((b) => ({ value: b, label: b })),
+            ],
+            onChange: (v: string) => setPickedBranch(v),
+          }),
       }),
       h('div', { key: 'into', className: 'gp-field' }, [
         h('span', { key: 'l', className: 'gp-field__label' }, props.t('modal.into')),
@@ -244,19 +246,19 @@ export function PushModal(props: SyncModalProps & { readonly initialBranch?: str
       h('div', { key: 'd', className: 'gp-modal__subject' }, props.t('modal.pushDesc')),
       h(Field, {
         key: 'b', label: props.t('modal.branch'), children:
-          h('select', {
-            className: 'gp-select',
+          h(DropSelect, {
             value: branch, disabled: localNames.length === 0,
-            onChange: (e: { target: { value: string } }) => { setPickedBranch(e.target.value); setPickedTo('') },
-          }, localNames.map((b) => h('option', { key: b, value: b }, b))),
+            options: localNames.map((b) => ({ value: b, label: b })),
+            onChange: (v: string) => { setPickedBranch(v); setPickedTo('') },
+          }),
       }),
       h(Field, {
         key: 't', label: props.t('modal.to'), children:
-          h('select', {
-            className: 'gp-select',
+          h(DropSelect, {
             value: to, disabled: toOptions.length === 0,
-            onChange: (e: { target: { value: string } }) => setPickedTo(e.target.value),
-          }, toOptions.map((o) => h('option', { key: o.value, value: o.value }, o.label))),
+            options: toOptions.map((o) => ({ value: o.value, label: o.label })),
+            onChange: (v: string) => setPickedTo(v),
+          }),
       }),
       ...(targetIsNew ? [h('label', { key: 'up', className: 'gp-check-row' }, [
         h('input', { key: 'i', type: 'checkbox', checked: setUpstream, onChange: () => setSetUpstream((v) => !v) }),
