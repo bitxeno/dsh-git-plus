@@ -207,6 +207,10 @@ export type GitAction = {
     readonly kind: 'reveal';
     readonly path: string;
 } | {
+    readonly kind: 'write-file';
+    readonly path: string;
+    readonly content: string;
+} | {
     readonly kind: 'rebase';
     readonly onto: string;
     readonly autostash?: boolean;

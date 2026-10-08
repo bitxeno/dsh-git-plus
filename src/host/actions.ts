@@ -2,7 +2,7 @@
  * GitAction → command sequence construction + execution (dsh-git-plus).
  * Extends the panel baseline with branch/tag/merge/stash management.
  */
-import { join, sep } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { detectOperation } from './queries.ts'
@@ -214,6 +214,9 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       // Executed directly in runAction (a .gitignore file write, not a git
       // command); reaching the planner with it is a programming error.
       return { error: 'git-error', message: 'ignore has no command plan' }
+    case 'write-file':
+      // Same: direct fs write in runAction, no argv to plan.
+      return { error: 'git-error', message: 'write-file has no command plan' }
     case 'reveal':
       if (!isSafePath(action.path)) return { error: 'invalid-path', message: `unsafe path: ${action.path}` }
       return planReveal(action.path, platform)
@@ -311,6 +314,9 @@ export async function runAction(
   let action = request.action
   if (action.kind === 'ignore') {
     return await appendGitignore(deps, config, root, request.sessionId, action.patterns)
+  }
+  if (action.kind === 'write-file') {
+    return await writeFileContent(deps, config, root, request.sessionId, action.path, action.content)
   }
   if (action.kind === 'create-tag' && action.push === true && action.pushRemote === undefined) {
     const remote = await resolvePushRemote(deps, root)
@@ -489,4 +495,59 @@ async function discardUntracked(
     await deps.fs.remove(target).catch(() => {})
   }
   return { ok: true, remainingTracked: tracked }
+}
+
+/**
+ * Overwrite (or create) a work-tree text file from the preview editor. Guards
+ * mirror discardUntracked: repo-relative safe path, realpath contained in the
+ * root (the parent, when creating), content bounded by maxBytes. Writing to a
+ * directory fails in writeFile and surfaces as git-error. Returns the fresh
+ * snapshot so the change list and diffs refresh.
+ */
+async function writeFileContent(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  root: string,
+  sessionId: string,
+  path: string,
+  content: string,
+): Promise<GitActionResult> {
+  if (!isSafePath(path)) return { ok: false, error: { code: 'invalid-path', message: `unsafe path: ${path}` } }
+  if (Buffer.byteLength(content, 'utf8') > config.maxBytes) {
+    return { ok: false, error: { code: 'git-error', message: 'content exceeds the size limit' } }
+  }
+  let rootReal: string
+  try {
+    rootReal = await deps.fs.realpath(root)
+  } catch {
+    return { ok: false, error: { code: 'git-error', message: 'repository root unavailable' } }
+  }
+  const target = join(root, path)
+  try {
+    const targetReal = await deps.fs.realpath(target)
+    if (targetReal !== rootReal && !targetReal.startsWith(rootReal + sep)) {
+      return { ok: false, error: { code: 'invalid-path', message: `path escapes repository: ${path}` } }
+    }
+  } catch {
+    // Absent (create): the parent must resolve inside the root so a symlinked
+    // directory cannot redirect the write elsewhere.
+    try {
+      const parentReal = await deps.fs.realpath(dirname(target))
+      if (parentReal !== rootReal && !parentReal.startsWith(rootReal + sep)) {
+        return { ok: false, error: { code: 'invalid-path', message: `path escapes repository: ${path}` } }
+      }
+    } catch {
+      return { ok: false, error: { code: 'git-error', message: 'parent directory unavailable' } }
+    }
+  }
+  try {
+    await deps.fs.writeFile(target, content)
+  } catch {
+    return { ok: false, error: { code: 'git-error', message: 'write failed' } }
+  }
+  const snapshot = await snapshotForSession(deps, config, sessionId)
+  if (!snapshot.ok) {
+    return { ok: false, error: { code: 'git-error', message: 'snapshot after action failed' } }
+  }
+  return { ok: true, snapshot: snapshot.value, output: '' }
 }

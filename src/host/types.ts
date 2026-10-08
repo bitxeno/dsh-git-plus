@@ -181,6 +181,7 @@ export type GitAction =
   | { readonly kind: 'stash-drop'; readonly index: number }
   | { readonly kind: 'ignore'; readonly patterns: readonly string[] }
   | { readonly kind: 'reveal'; readonly path: string }
+  | { readonly kind: 'write-file'; readonly path: string; readonly content: string }
   // V2 stubs (typed now, rejected with not-implemented until V2):
   | { readonly kind: 'rebase'; readonly onto: string; readonly autostash?: boolean }
   | { readonly kind: 'worktree-add'; readonly path: string; readonly branch?: string; readonly newBranch?: string }

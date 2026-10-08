@@ -9,8 +9,10 @@ import { createElement as h, useEffect, useMemo, useState } from 'react'
 import type { JSX } from 'react'
 import type { GitPanelRemote } from '../rpc'
 import { queryAs } from '../rpc'
+import type { GitAction } from '../types'
 import type { GitKey } from '../locales'
 import { ModalFooter, ModalShell } from './shell'
+import { CodeEditor } from '../CodeEditor'
 import {
   languageForPath, MarkdownText, useCodeHighlighter, type HighlightSpan,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -30,9 +32,16 @@ export function FilePreviewModal(props: {
   readonly path: string
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
   readonly onClose: () => void
+  readonly onSubmit: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
 }): JSX.Element {
   const [file, setFile] = useState<PreviewFile>({ kind: 'loading' })
   const [renderMarkdown, setRenderMarkdown] = useState(true)
+  // Inline source editing (text files only): a textarea over the loaded
+  // content, saved through the write-file action.
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const markdownLabels = useMemo(() => ({
     code: { copyLabel: props.t('files.copy'), copiedLabel: props.t('files.copied') },
     footnotes: props.t('files.footnotes'),
@@ -50,6 +59,8 @@ export function FilePreviewModal(props: {
   useEffect(() => {
     let alive = true
     setFile({ kind: 'loading' })
+    setEditing(false)
+    setError(null)
     void props.remote.query({ sessionId: props.sessionId, query: { kind: 'file-content', path: props.path } }).then((res) => {
       if (!alive) return
       const fc = queryAs(res, 'file-content')
@@ -62,16 +73,53 @@ export function FilePreviewModal(props: {
     return () => { alive = false }
   }, [props.remote, props.sessionId, props.path])
 
+  const startEdit = (): void => {
+    if (file.kind !== 'text') return
+    setDraft(file.content)
+    setError(null)
+    setEditing(true)
+  }
+
+  const save = async (): Promise<void> => {
+    if (file.kind !== 'text' || draft === file.content) return
+    setBusy(true)
+    setError(null)
+    const res = await props.onSubmit({ kind: 'write-file', path: props.path, content: draft })
+    setBusy(false)
+    if (res.ok) {
+      setFile({ kind: 'text', content: draft })
+      setEditing(false)
+    } else {
+      setError(res.error ?? '')
+    }
+  }
+
+  const editable = file.kind === 'text' && !editing
+  const dirty = file.kind === 'text' && draft !== file.content
+
   return h(ModalShell, {
     title: props.path, onClose: props.onClose, wide: true, children: [
-      file.kind === 'text' && isMarkdownPath(props.path)
+      file.kind === 'text' && isMarkdownPath(props.path) && !editing
         ? h('div', { key: 'mode', className: 'gp-files__mode', role: 'group', 'aria-label': props.t('files.previewMode') }, [
           h('button', { key: 'source', type: 'button', className: `gp-files__mode-btn${!renderMarkdown ? ' gp-files__mode-btn--active' : ''}`, 'aria-pressed': !renderMarkdown, onClick: () => setRenderMarkdown(false) }, props.t('files.source')),
           h('button', { key: 'render', type: 'button', className: `gp-files__mode-btn${renderMarkdown ? ' gp-files__mode-btn--active' : ''}`, 'aria-pressed': renderMarkdown, onClick: () => setRenderMarkdown(true) }, props.t('files.render')),
         ])
         : null,
-      h('div', { key: 'body', className: 'gp-preview-body' }, renderBody(file, lines, plain, props.path, renderMarkdown, highlight, markdownLabels, props.t)),
-      h(ModalFooter, { key: 'f', t: props.t, onClose: props.onClose, onConfirm: props.onClose, busy: false, confirmLabel: props.t('common.close') }),
+      h('div', { key: 'body', className: 'gp-preview-body' }, editing
+        ? h(CodeEditor, {
+          key: 'ed', initialCode: draft,
+          highlight: plain ? undefined : highlight,
+          onChange: setDraft, disabled: busy,
+        })
+        : renderBody(file, lines, plain, props.path, renderMarkdown, highlight, markdownLabels, props.t)),
+      error !== null ? h('div', { key: 'e', className: 'gp-modal__err' }, error) : null,
+      editing
+        ? h(ModalFooter, { key: 'f', t: props.t, onClose: () => setEditing(false), onConfirm: () => void save(), busy, disabled: !dirty, confirmLabel: props.t('modal.save') })
+        : h(ModalFooter, {
+          key: 'f', t: props.t, onClose: props.onClose,
+          onConfirm: editable ? startEdit : props.onClose, busy: false,
+          confirmLabel: props.t(editable ? 'modal.edit' : 'common.close'),
+        }),
     ],
   })
 }

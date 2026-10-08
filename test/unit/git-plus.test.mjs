@@ -61,6 +61,9 @@ describe('planAction git-plus', () => {
     assert.ok('error' in planAction({ kind: 'reveal', path: 'a.png' }, false, 'linux'))
     assert.ok('error' in planAction({ kind: 'reveal', path: '../x' }, false, 'darwin'))
   })
+  it('routes write-file past the planner (direct execution)', () => {
+    assert.ok('error' in planAction({ kind: 'write-file', path: 'a.txt', content: 'hi' }, false))
+  })
   it('plans rename-branch', () => {
     const r = planAction({ kind: 'rename-branch', oldName: 'foo', newName: 'bar' }, false)
     assert.ok('argv' in r)

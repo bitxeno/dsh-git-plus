@@ -259,7 +259,7 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
       localNames: modal.localNames, onClose: ctx.onClose, onSubmit: ctx.onAction,
     })
   }
-  if (modal.kind === 'preview') return h(FilePreviewModal, { remote: ctx.remote, sessionId: ctx.sessionId, path: modal.path, t: ctx.t, onClose: ctx.onClose })
+  if (modal.kind === 'preview') return h(FilePreviewModal, { remote: ctx.remote, sessionId: ctx.sessionId, path: modal.path, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'rename') return h(RenameBranchModal, { t: ctx.t, oldName: modal.oldName, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: modal.danger ?? true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })
