@@ -37,6 +37,7 @@ dsh plugin --profile web add dsh-git-plus
 - **Pull** —— 选择远程与远程分支（默认取上游分支），显示合并目标分支，可勾选 `--rebase` 与 `--autostash`。
 - **Push** —— 选择本地分支与目标 `远程/分支`（一键新建远程分支）；「建立跟踪引用（`--set-upstream`）」仅在目标为远程新分支时出现，另可选 `--tags` 与 `--force`。
 - 分支行显示领先/落后计数；远端没有对应分支的行图标置灰。点击分支/标签过滤 All Commits，双击检出，右键打开行菜单（检出、合并、在此新建分支/标签、复制、删除）。
+- Branches 与 Remotes 都按 `/` 折叠成分组；默认分支置顶显示（本地为 `main` 等，Remotes 为 `origin/main`）。Remotes 中默认分支不脱离其远程分组，而是留在 `origin` 分组内并排在第一位。
 - Stash 行支持应用 / 应用并删除 / 删除（删除需二次点击确认）。
 
 **Local Changes** —— 逐文件或批量暂存 / 取消暂存 / 放弃，提交与 amend，逐文件差异。

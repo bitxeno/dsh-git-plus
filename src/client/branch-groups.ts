@@ -1,6 +1,7 @@
 /**
- * Sidebar branch grouping: pin the default branch first, then fold `/`-separated
- * names into collapsible folder nodes.
+ * Sidebar branch grouping: fold `/`-separated names into collapsible folder
+ * nodes, optionally hoisting one ref (a default branch) to the front of the
+ * folder it lives in — never out of that folder.
  */
 import type { GitBranch } from './types'
 
@@ -22,6 +23,8 @@ export interface BranchLeafNode {
   /** Short display name inside a folder (last `/` segment); full name at root. */
   readonly displayName: string
   readonly depth: number
+  /** The hoisted `pinnedRef` leaf, so the row can carry the "default" badge. */
+  readonly isDefault?: boolean
 }
 
 export type BranchTreeNode = BranchFolderNode | BranchLeafNode
@@ -61,8 +64,20 @@ interface MutableFolder {
   branches: GitBranch[]
 }
 
-/** Fold `branches` with `/` into nested folders; plain names stay as root leaves. */
-export function buildBranchFolderTree(branches: readonly GitBranch[]): readonly BranchTreeNode[] {
+/**
+ * Fold `branches` with `/` into nested folders; plain names stay as root leaves.
+ *
+ * `options.pinnedRef` hoists one branch to the front of the sibling list it
+ * already belongs to — it is never pulled out of its folder. So `origin/main`
+ * with `pinnedRef: 'origin/main'` stays inside the `origin` folder and leads
+ * it (the row carries the "default" badge), which is how a remote's default
+ * branch should read: the folder still owns the ref.
+ */
+export function buildBranchFolderTree(
+  branches: readonly GitBranch[],
+  options: { readonly pinnedRef?: string | null } = {},
+): readonly BranchTreeNode[] {
+  const pinnedRef = options.pinnedRef ?? null
   const rootFolders = new Map<string, MutableFolder>()
   const rootBranches: GitBranch[] = []
 
@@ -97,20 +112,32 @@ export function buildBranchFolderTree(branches: readonly GitBranch[]): readonly 
   }
 
   const sortBranches = (list: GitBranch[]): GitBranch[] =>
-    [...list].sort((a, b) => a.name.localeCompare(b.name))
+    pinFirst([...list].sort((a, b) => a.name.localeCompare(b.name)), pinnedRef)
 
   // Root level: folders from the map + loose root branches.
   const folderNodes: BranchFolderNode[] = [...rootFolders.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((f) => collapseFolder(f, 0))
+    .map((f) => collapseFolder(f, 0, pinnedRef))
   const leafNodes: BranchLeafNode[] = sortBranches(rootBranches).map((b) => ({
     kind: 'branch',
     branch: b,
     displayName: b.name,
     depth: 0,
+    ...(b.name === pinnedRef ? { isDefault: true } : {}),
   }))
   // Folders first, then loose branches — both alphabetical.
   return [...folderNodes, ...leafNodes]
+}
+
+/**
+ * Move `pinnedRef` to the front of an already-sorted sibling list, keeping the
+ * rest in order. A ref that is absent or already first leaves the list as is.
+ */
+function pinFirst(list: GitBranch[], pinnedRef: string | null): GitBranch[] {
+  if (pinnedRef === null) return list
+  const idx = list.findIndex((b) => b.name === pinnedRef)
+  if (idx <= 0) return list
+  return [list[idx]!, ...list.slice(0, idx), ...list.slice(idx + 1)]
 }
 
 function countLeaves(f: MutableFolder): number {
@@ -123,7 +150,7 @@ function countLeaves(f: MutableFolder): number {
  * Collapse single-child folder chains (`a` → `b` becomes `a/b`) so deep
  * single-branch paths don't render as a staircase of one-item folders.
  */
-function collapseFolder(f: MutableFolder, depth: number): BranchFolderNode {
+function collapseFolder(f: MutableFolder, depth: number, pinnedRef: string | null): BranchFolderNode {
   let name = f.name
   let path = f.path
   let current = f
@@ -134,15 +161,16 @@ function collapseFolder(f: MutableFolder, depth: number): BranchFolderNode {
     current = only
   }
   const sortBranches = (list: GitBranch[]): GitBranch[] =>
-    [...list].sort((a, b) => a.name.localeCompare(b.name))
+    pinFirst([...list].sort((a, b) => a.name.localeCompare(b.name)), pinnedRef)
   const subFolders: BranchFolderNode[] = [...current.folders.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((sub) => collapseFolder(sub, depth + 1))
+    .map((sub) => collapseFolder(sub, depth + 1, pinnedRef))
   const leaves: BranchLeafNode[] = sortBranches(current.branches).map((b) => ({
     kind: 'branch',
     branch: b,
     displayName: b.name.slice(path.length + 1),
     depth: depth + 1,
+    ...(b.name === pinnedRef ? { isDefault: true } : {}),
   }))
   return {
     kind: 'folder',

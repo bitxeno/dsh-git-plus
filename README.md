@@ -37,6 +37,7 @@ The panel lives in the conversation view as the **Git Plus** tab.
 - **Pull** — pick the remote and remote branch (defaults to the upstream), see the target branch, opt into `--rebase` and `--autostash`.
 - **Push** — pick the local branch and the target `remote/branch` (creating a branch on the remote is one select away); tracking reference (`--set-upstream`) shows only for new remote branches, with optional `--tags` and `--force`.
 - Branch rows show ahead/behind counts; a greyed icon marks branches with no remote counterpart. Click a branch/tag to filter All Commits, double-click to check it out, right-click for the row menu (checkout, merge, create branch/tag here, copy, delete).
+- Both Branches and Remotes fold `/`-separated names into folders, with the default branch first (the local default branch; `origin/main` under Remotes). In Remotes the default branch stays inside its own remote folder and leads it — it is never lifted out of `origin`.
 - Stash rows apply / pop / drop (drop arms with a second click).
 
 **Local Changes** — stage / unstage / discard per file or in bulk, commit with amend, per-file diffs.

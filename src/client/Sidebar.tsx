@@ -1,9 +1,10 @@
 /**
  * dsh-git-plus sidebar: top nav (Local Changes / All Commits), a fetch/pull/
  * push sync toolbar, and collapsible groups (Branches / Remotes / Tags /
- * Stashes). The default branch pins to the top of Branches; slash-separated
+ * Stashes). The local default branch pins to the top of Branches; slash-separated
  * names fold into collapsible folders, and Remotes groups by remote name with
- * a per-endpoint icon (GitHub mark vs branch glyph). Clicking a branch/tag filters All
+ * a per-endpoint icon (GitHub mark vs branch glyph) and keeps the remote's
+ * default branch first inside its own folder. Clicking a branch/tag filters All
  * Commits; row actions live in a right-click menu; double-click a branch to
  * check it out, double-click a tag to confirm-checkout its code.
  */
@@ -223,14 +224,15 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   }))
   // Remote-tracking refs grouped by remote name (`origin/main` → folder
   // `origin`), same folder component as local branches. Keys are prefixed so
-  // they never collide with local folders in the shared collapsed set. The
-  // default branch's ref on the primary remote pins to the top like locally.
-  const { pinnedRemoteRow, remoteNodes } = useMemo(() => {
+  // they never collide with local folders in the shared collapsed set. Unlike
+  // local branches, the default branch is *not* hoisted out of its remote: it
+  // stays inside the `origin` folder, leading it, so the folder keeps owning
+  // all of its refs (and the row carries the "default" badge).
+  const { remoteNodes } = useMemo(() => {
     const flat = (tree?.remote ?? []).slice(0, 50)
     const primary = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
     const defName = tree?.defaultBranch != null && primary !== undefined ? `${primary}/${tree.defaultBranch}` : null
-    const { pinned, rest } = splitDefaultBranch(flat, defName)
-    return { pinnedRemoteRow: pinned, remoteNodes: buildBranchFolderTree(rest) }
+    return { remoteNodes: buildBranchFolderTree(flat, { pinnedRef: defName }) }
   }, [tree])
   const remoteLeafCbsFor = (name: string): BranchRowCbs => ({
     onSelect,
@@ -240,21 +242,14 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onMenu: (x, y) => setMenu({ x, y, kind: 'remote', name }),
     t,
   })
-  const pinnedRemoteRows = pinnedRemoteRow !== null
-    ? [renderBranchRow(pinnedRemoteRow, null, selection, remoteLeafCbsFor(pinnedRemoteRow.name), {
-      displayName: pinnedRemoteRow.name,
-      depth: 0,
-      isDefault: true,
-    })]
-    : []
-  const remoteRows = [...pinnedRemoteRows, ...renderRemoteNodes(remoteNodes, {
+  const remoteRows = renderRemoteNodes(remoteNodes, {
     folderClosed,
     onToggleFolder: toggleFolder,
     remoteUrls: tree?.remoteUrls ?? {},
     knownRemotes: tree?.remotes ?? [],
     selection,
     leafCbsFor: remoteLeafCbsFor,
-  })]
+  })
   const sep = (key: string): MenuItem => ({ key, separator: true })
   const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'stash-create'
     ? [
@@ -517,6 +512,7 @@ function renderRemoteNodes(
       out.push(renderBranchRow(node.branch, null, ctx.selection, ctx.leafCbsFor(node.branch.name), {
         displayName: node.displayName,
         depth: node.depth,
+        isDefault: node.isDefault === true,
       }))
     } else {
       const key = `remote/${node.path}`
