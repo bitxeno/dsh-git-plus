@@ -56,6 +56,9 @@ const CSS = `
 .gp-btn:disabled{opacity:.4;cursor:not-allowed}
 .gp-btn--primary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
 .gp-btn--primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+.gp-btn--secondary{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.gp-btn--secondary:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.gp-btn--secondary:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active,var(--dsw-alias-interactive-bg-hover))}
 /* Busy spinner inside confirm buttons while a long action (push/pull/fetch) runs. */
 .gp-spin{width:12px;height:12px;flex:none;border:1.5px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;border-radius:50%;animation:gp-spin .7s linear infinite}
 @keyframes gp-spin{to{transform:rotate(360deg)}}

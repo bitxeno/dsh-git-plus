@@ -286,8 +286,8 @@ function ConflictBanner(props: {
     h('div', { key: 'f', className: 'gp-conflict__files' },
       files.map((f) => h('div', { key: f, className: 'gp-conflict__file' }, `U ${f}`))),
     h('div', { key: 'ops', className: 'gp-conflict__ops' }, [
-      h('button', { key: 'c', type: 'button', className: 'gp-btn--primary', disabled: busy, onClick: () => void run({ kind: 'merge-continue' }) }, props.t('conflict.continue')),
-      h('button', { key: 'a', type: 'button', disabled: busy, onClick: () => void run({ kind: 'merge-abort' }) }, props.t('conflict.abort')),
+      h('button', { key: 'c', type: 'button', className: 'gp-btn gp-btn--primary', disabled: busy, onClick: () => void run({ kind: 'merge-continue' }) }, props.t('conflict.continue')),
+      h('button', { key: 'a', type: 'button', className: 'gp-btn gp-btn--secondary', disabled: busy, onClick: () => void run({ kind: 'merge-abort' }) }, props.t('conflict.abort')),
     ]),
   ])
 }
