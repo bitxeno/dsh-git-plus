@@ -1,6 +1,6 @@
 {
   "name": "dsh-git-plus",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "description": "dsh panel plugin: sidebar git management — Local Changes / All Commits, branch/tag/stash management, merge with conflict handling.",
   "type": "module",
   "license": "MIT",
