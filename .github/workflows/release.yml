@@ -44,21 +44,21 @@ jobs:
         run: npx --yes changelogithub --output "$RUNNER_TEMP/release-notes.md"
 
       # Plugin releases double as the install page (market/awesome-list
-      # visitors land here), so an install block leads the notes: install
-      # command first, changelogithub notes next, `--generate-notes` appends
-      # What's Changed below both.
-      - name: Prepend install instructions
+      # visitors land here), so an install block follows the notes:
+      # changelogithub notes first, install command next, `--generate-notes`
+      # appends What's Changed below both.
+      - name: Append install instructions
         run: |
           {
+            cat "$RUNNER_TEMP/release-notes.md"
+            echo ''
             echo '## Install'
             echo ''
             echo '```sh'
-            echo 'dsh plugin --profile web add git+ssh://git@github.com/bitxeno/dsh-git-plus.git'
+            echo 'dsh plugin --profile web add dsh-git-plus'
             echo '```'
             echo ''
             echo 'Restart `dsh web` after installing (a client-only change just needs a browser refresh).'
-            echo ''
-            cat "$RUNNER_TEMP/release-notes.md"
           } > "$RUNNER_TEMP/notes-with-install.md"
           mv "$RUNNER_TEMP/notes-with-install.md" "$RUNNER_TEMP/release-notes.md"
 
