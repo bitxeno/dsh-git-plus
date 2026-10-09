@@ -10,7 +10,7 @@ import type { DirEntry, GitAction, GitChange, GitSnapshot } from './types'
 import type { GitKey } from './locales'
 import { ChangeStats } from './ChangeStats'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
-import { ChevronIcon, FolderIcon } from './icons'
+import { ChevronIcon, EyeIcon, FolderIcon } from './icons'
 import { buildFileTree, type FileTreeNode } from './file-tree'
 import { Tip } from './Tip'
 import { statusChar, statusClass } from './status'
@@ -335,6 +335,8 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
         const dirKey = `${sideKey}:${node.path}`
         const open = !closedDirs.has(dirKey)
         const paths = collectLeafPaths(node)
+        const discardKey = `d:${dirKey}`
+        const dirArmed = armedDiscard === discardKey
         out.push(h('div', {
           key: `d:${dirKey}`,
           className: `gp-tdir${activeDir === dirKey ? ' gp-tdir--active' : ''}`,
@@ -359,12 +361,17 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
             h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
             h('span', { key: 'act', className: 'gp-tdir__actions' }, [
               h(Tip, {
-                key: 's', label: stagedSide ? t('changes.unstage') : t('changes.stage'),
+                key: 'dis', label: dirArmed ? t('changes.discardConfirm') : t('changes.discard'),
                 children: h('button', {
                   type: 'button', className: 'gp-icon-btn',
+                  style: dirArmed ? { color: 'var(--dsw-alias-state-error-primary)' } : {},
                   disabled: busy || paths.length === 0,
-                  onClick: (e: Event) => { e.stopPropagation(); stagePaths(paths, stagedSide) },
-                }, stagedSide ? '−' : '+'),
+                  onClick: (e: Event) => {
+                    e.stopPropagation()
+                    if (armedDiscard === discardKey) { void run({ kind: 'discard', paths: [...paths] }); setArmedDiscard(null) }
+                    else setArmedDiscard(discardKey)
+                  },
+                }, '↺'),
               }),
             ]),
           ]))
@@ -393,6 +400,7 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
           armed: armedDiscard === rowKey,
           onOpen: () => void showDiff(c.path, c.staged ? 'staged' : 'worktree'),
           onStage: () => void run(c.staged ? { kind: 'unstage', paths: [c.path] } : { kind: 'stage', paths: [c.path] }),
+          onPreview: () => onPreviewFile(c.path),
           onDiscard: () => {
             if (armedDiscard === rowKey) { void run({ kind: 'discard', paths: [c.path] }); setArmedDiscard(null) }
             else setArmedDiscard(rowKey)
@@ -553,6 +561,7 @@ interface RowActions {
   armed: boolean
   onOpen: () => void
   onStage: () => void
+  onPreview: () => void
   onDiscard: () => void
   onMenu: (x: number, y: number) => void
   t: (key: GitKey, params?: Record<string, string | number>) => string
@@ -573,8 +582,8 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
     h('span', { key: 'nm', className: 'gp-tree-name' }, name),
     h('span', { key: 'act', className: 'gp-file-row__actions' }, [
       h(Tip, {
-        key: 'stg', label: c.staged ? a.t('changes.unstage') : a.t('changes.stage'),
-        children: h('button', { type: 'button', className: 'gp-icon-btn', disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onStage() } }, c.staged ? '−' : '+'),
+        key: 'view', label: a.t('menu.view'),
+        children: h('button', { type: 'button', className: 'gp-icon-btn', onClick: (e: Event) => { e.stopPropagation(); a.onPreview() } }, h(EyeIcon, { size: 14 })),
       }),
       h(Tip, {
         key: 'dis', label: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'),
