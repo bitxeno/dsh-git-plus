@@ -10,7 +10,7 @@ import type { JSX } from 'react'
 import { useGitView } from './registry'
 import { hasSession } from './rpc'
 import { activateGitTab, isGitTabActive, requestSubTab, returnToConversation } from './jump'
-import { setGitTabDot, clearGitTabDot, type GitTabDotStatus } from './tab-dot'
+import { setGitTabDot, clearGitTabDot } from './tab-dot'
 import type { GitKey } from './locales'
 
 interface PillProps {
@@ -36,16 +36,15 @@ export function GitPill({ sessionId, t }: PillProps): JSX.Element | null {
   const view = useGitView(sessionId)
   const dotOwner = useRef(Symbol('gp-tab-dot'))
 
-  const dotStatus: GitTabDotStatus =
-    view.state === 'ready' && view.snapshot.showInputPill === false
-      ? (view.snapshot.dirty ? 'dirty' : 'synced')
-      : null
+  // Tab dirty dot (VSCode-style): shown iff the worktree has uncommitted
+  // changes, independent of the input-bar marker toggle.
+  const tabDirty = view.state === 'ready' ? view.snapshot.dirty : false
   const label = t('panel.tab')
   useEffect(() => {
-    setGitTabDot(dotOwner.current, label, dotStatus)
+    setGitTabDot(dotOwner.current, label, tabDirty)
     const owner = dotOwner.current
     return () => { clearGitTabDot(owner) }
-  }, [label, dotStatus])
+  }, [label, tabDirty])
 
   if (view.state === 'cold' || view.state === 'loading' || view.state === 'no-cwd') return null
   if (view.state === 'error') return null

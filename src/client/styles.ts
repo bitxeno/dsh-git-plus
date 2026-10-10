@@ -405,10 +405,9 @@ const CSS = `
 .gp-cfg__hint{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}
 .gp-cfg__err{margin:0;font-size:12px;color:var(--dsw-alias-state-error-primary)}
 
-/* status dot appended to the shell's Git view-tab button — shown only when the
- * input-bar marker is hidden; colour mirrors the pill branch (synced/dirty). */
+/* dirty dot appended to the shell's Git view-tab button (VSCode-style: shown
+ * iff the worktree has uncommitted changes, hidden when clean). */
 .gp-tab-dot{display:inline-block;width:7px;height:7px;margin-left:6px;border-radius:999px;vertical-align:middle;flex:none}
-.gp-tab-dot--synced{background:var(--dsw-alias-state-success-primary,#3fb950)}
 .gp-tab-dot--dirty{background:var(--dsw-alias-state-warn-primary,#e0982e)}
 
 /* pill wrapper + rounded hover tooltip panel (openviking-manager style):

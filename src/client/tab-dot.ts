@@ -1,5 +1,7 @@
 /**
- * Status dot on the conversation shell's Git view-tab button.
+ * Dirty dot on the conversation shell's Git view-tab button (VSCode-style:
+ * a plain dot shows iff the worktree has uncommitted changes, hidden when
+ * clean).
  *
  * The shell renders the view-tab label as plain text resolved globally (no
  * per-session context, not reactive to git status), so the dot is injected
@@ -7,43 +9,48 @@
  * The dot carries no text, so the tab's textContent stays the plain label and
  * the pill's `activateGitTab` matcher keeps working. A narrowly-scoped
  * MutationObserver on the tab list re-applies the dot if the shell re-renders
- * the button. Color mirrors the input-bar pill: green synced / orange dirty.
+ * the button.
  */
 import { SHELL_TABLIST_SELECTOR, SHELL_TAB_SELECTOR } from './jump'
-
-export type GitTabDotStatus = 'synced' | 'dirty' | null
 
 const DOT_ATTR = 'data-gp-tab-dot'
 
 let observer: MutationObserver | undefined
 let observed: HTMLElement | null = null
 let currentLabel = ''
-let currentStatus: GitTabDotStatus = null
+let currentDirty = false
 // Owner token: with multiple shell panes two GitPill instances drive this
 // module. The last one to set an active dot owns it; a clear from a stale owner
 // (its unmount) must not erase the current owner's dot (last-writer-wins).
 let owner: symbol | undefined
 
-/** The shell view-tab button carrying the given label (dot text excluded). */
+/** The shell view-tab button carrying the given label (dot excluded). */
 function findTab(label: string): HTMLButtonElement | null {
   if (typeof document === 'undefined') return null
   const tabs = document.querySelectorAll<HTMLButtonElement>(SHELL_TAB_SELECTOR)
   for (const tab of tabs) {
-    if ((tab.textContent ?? '').trim() === label) return tab
+    if (tabLabel(tab) === label) return tab
   }
   return null
 }
 
-/** Reconcile the dot on the current tab to the current desired status. */
+/** Button label with our injected dot stripped (accessible name stays plain). */
+function tabLabel(btn: HTMLButtonElement): string {
+  const clone = btn.cloneNode(true) as HTMLButtonElement
+  clone.querySelectorAll(`[${DOT_ATTR}]`).forEach((el) => el.remove())
+  return (clone.textContent ?? '').trim()
+}
+
+/** Reconcile the dot on the current tab to the current dirty flag. */
 function apply(): void {
   const btn = findTab(currentLabel)
   if (btn === null) return
   const existing = btn.querySelector<HTMLSpanElement>(`[${DOT_ATTR}]`)
-  if (currentStatus === null) {
+  if (!currentDirty) {
     existing?.remove()
     return
   }
-  const cls = `gp-tab-dot gp-tab-dot--${currentStatus}`
+  const cls = 'gp-tab-dot gp-tab-dot--dirty'
   if (existing !== null) {
     if (existing.className !== cls) existing.className = cls
     return
@@ -74,17 +81,17 @@ function teardownObserver(): void {
 }
 
 /**
- * Set the Git tab's status dot (null hides it). `who` identifies the caller so
- * a later owner's clear can't be undone by an earlier instance. A null status
+ * Set the Git tab's dirty dot (false hides it). `who` identifies the caller so
+ * a later owner's clear can't be undone by an earlier instance. A clean flag
  * releases ownership and detaches the observer instead of tracking the tab.
  */
-export function setGitTabDot(who: symbol, label: string, status: GitTabDotStatus): void {
+export function setGitTabDot(who: symbol, label: string, dirty: boolean): void {
   if (typeof document === 'undefined') return
-  // A null status is a release: same owner check + teardown as clearGitTabDot.
-  if (status === null) { clearGitTabDot(who); return }
+  // A clean flag is a release: same owner check + teardown as clearGitTabDot.
+  if (!dirty) { clearGitTabDot(who); return }
   owner = who
   currentLabel = label
-  currentStatus = status
+  currentDirty = true
   ensureObserver()
   apply()
 }
@@ -93,7 +100,7 @@ export function setGitTabDot(who: symbol, label: string, status: GitTabDotStatus
 export function clearGitTabDot(who: symbol): void {
   if (owner !== undefined && owner !== who) return
   owner = undefined
-  currentStatus = null
+  currentDirty = false
   apply()
   teardownObserver()
 }

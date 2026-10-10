@@ -53,13 +53,14 @@ export function subscribeSubTab(sessionId: string, cb: (tab: SubTab) => void): (
 /**
  * Activate the Git view tab by clicking its tab-bar button (the semantic
  * `button[role="tab"]` the conversation shell renders). Matches by the
- * localized label. Returns whether a matching tab was found.
+ * localized label, ignoring our injected dot. Returns whether a
+ * matching tab was found.
  */
 export function activateGitTab(label: string): boolean {
   if (typeof document === 'undefined') return false
   const tabs = document.querySelectorAll<HTMLButtonElement>(SHELL_TAB_SELECTOR)
   for (const tab of tabs) {
-    if ((tab.textContent ?? '').trim() !== label) continue
+    if (shellTabLabel(tab) !== label) continue
     if (tab.getAttribute('aria-selected') !== 'true') tab.click()
     return true
   }
@@ -71,7 +72,7 @@ export function isGitTabActive(label: string): boolean {
   if (typeof document === 'undefined') return false
   const tabs = document.querySelectorAll<HTMLButtonElement>(SHELL_TAB_SELECTOR)
   for (const tab of tabs) {
-    if ((tab.textContent ?? '').trim() !== label) continue
+    if (shellTabLabel(tab) !== label) continue
     return tab.getAttribute('aria-selected') === 'true'
   }
   return false
@@ -86,9 +87,20 @@ export function returnToConversation(label: string): boolean {
   if (typeof document === 'undefined') return false
   const tabs = document.querySelectorAll<HTMLButtonElement>(SHELL_TAB_SELECTOR)
   for (const tab of tabs) {
-    if ((tab.textContent ?? '').trim() === label) continue
+    if (shellTabLabel(tab) === label) continue
     if (tab.getAttribute('aria-selected') !== 'true') tab.click()
     return true
   }
   return false
+}
+
+/**
+ * Shell tab label with the plugin's injected dot stripped, so the dot never
+ * breaks tab matching (it carries no text, but stripping keeps matching
+ * robust if the dot ever gains any).
+ */
+function shellTabLabel(btn: HTMLButtonElement): string {
+  const clone = btn.cloneNode(true) as HTMLButtonElement
+  clone.querySelectorAll('[data-gp-tab-dot]').forEach((el) => el.remove())
+  return (clone.textContent ?? '').trim()
 }
