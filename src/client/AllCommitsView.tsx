@@ -52,6 +52,7 @@ interface OverviewProps {
   readonly onTagAt: (hash: string) => void
   readonly onCheckoutAt: (hash: string, subject: string) => void
   readonly onResetAt: (hash: string, shortHash: string, subject: string) => void
+  readonly onCherryPickAt: (hash: string, shortHash: string, subject: string) => void
 }
 
 const GRID_TPL = 'minmax(0,1fr) 120px 72px 96px'
@@ -75,7 +76,7 @@ function useNarrow(el: HTMLElement | null, min: number): boolean {
   return narrow
 }
 
-export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, currentBranch, onBranchAt, onTagAt, onCheckoutAt, onResetAt }: OverviewProps): JSX.Element {
+export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, currentBranch, onBranchAt, onTagAt, onCheckoutAt, onResetAt, onCherryPickAt }: OverviewProps): JSX.Element {
   const [filter, setFilter] = useState<HistoryFilter>({ ref: null, search: '', author: '', since: '' })
   // Sidebar selection anchors dimming (one-way sync). History always loads
   // everything; rows outside the selected ref's ancestry render dimmed, so a
@@ -314,6 +315,7 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
           key: 'rs', label: t('menu.resetBranchToHere', { branch: currentBranch }),
           onSelect: () => onResetAt(rowMenu.hash, rowMenu.shortHash, rowMenu.subject),
         }] : []),
+        { key: 'cpk', label: t('menu.cherryPick'), onSelect: () => onCherryPickAt(rowMenu.hash, rowMenu.shortHash, rowMenu.subject) },
         { key: 's2', separator: true },
         { key: 'cp', label: t('menu.copySha'), onSelect: () => void copyText(rowMenu.hash) },
         { key: 'cs', label: t('menu.copyShortSha'), onSelect: () => void copyText(rowMenu.shortHash) },

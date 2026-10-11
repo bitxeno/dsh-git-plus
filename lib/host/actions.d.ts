@@ -29,6 +29,12 @@ export declare function resolvePushRemote(deps: SnapshotDeps, root: string): Pro
 /** Execute a management action, returning the fresh snapshot on success. */
 export declare function runAction(deps: SnapshotDeps, config: GitPanelConfig, request: GitActionRequest): Promise<GitActionResult>;
 /**
+ * An "empty" cherry-pick stop reads like a conflict ("now empty, possibly due
+ * to conflict resolution") but has no unmerged files — the change is already
+ * applied. Pure helper so the rule stays unit-testable.
+ */
+export declare function isEmptyCherryPick(output: string, conflictFiles: readonly string[]): boolean;
+/**
  * Split discard paths into untracked (removed from disk) vs tracked (git
  * restore). A path inside an untracked directory entry is itself untracked,
  * covering rows the client synthesizes by expanding such dirs (they are not

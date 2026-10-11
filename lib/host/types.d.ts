@@ -168,6 +168,11 @@ export type GitAction = {
     readonly ref: string;
     readonly mode: 'soft' | 'mixed' | 'hard';
 } | {
+    readonly kind: 'cherry-pick';
+    readonly ref: string; /** Leave the changes staged without committing (`-n`). */
+    readonly noCommit?: boolean; /** Record the source in the message (`-x`). */
+    readonly recordOrigin?: boolean;
+} | {
     readonly kind: 'edit-remote';
     readonly oldName: string;
     readonly newName: string;

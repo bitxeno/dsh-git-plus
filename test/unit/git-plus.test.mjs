@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -62,6 +62,23 @@ describe('planAction git-plus', () => {
   it('answers unknown actions with a typed error instead of throwing', () => {
     const r = planAction({ kind: 'future-action' }, false)
     assert.ok('error' in r)
+  })
+  it('plans cherry-pick with no-commit and record-origin flags', () => {
+    const plain = planAction({ kind: 'cherry-pick', ref: 'abc1234' }, false)
+    assert.ok('argv' in plain)
+    assert.deepEqual(plain.argv, [['git', 'cherry-pick', '--end-of-options', 'abc1234']])
+    const full = planAction({ kind: 'cherry-pick', ref: 'abc1234', noCommit: true, recordOrigin: true }, false)
+    assert.ok('argv' in full)
+    assert.deepEqual(full.argv, [['git', 'cherry-pick', '--no-commit', '-x', '--end-of-options', 'abc1234']])
+    assert.ok('error' in planAction({ kind: 'cherry-pick', ref: '-evil' }, false))
+  })
+  it('spots an empty cherry-pick (already applied) vs a real conflict', () => {
+    const emptyOut = 'The previous cherry-pick is now empty, possibly due to conflict resolution.\nOtherwise, please use \'git cherry-pick --skip\'\nnothing to commit, working tree clean'
+    assert.equal(isEmptyCherryPick(emptyOut, []), true)
+    // Unmerged files mean a real conflict even when the output mentions empty.
+    assert.equal(isEmptyCherryPick(emptyOut, ['a.vue']), false)
+    assert.equal(isEmptyCherryPick('CONFLICT (content): Merge conflict in a.vue', []), false)
+    assert.equal(isEmptyCherryPick('error: could not apply abc1234...', []), false)
   })
   it('plans reveal per platform', () => {
     const mac = planAction({ kind: 'reveal', path: 'docs/a.png' }, false, 'darwin')

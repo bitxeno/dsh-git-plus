@@ -174,6 +174,14 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       const flag = action.mode === 'soft' ? '--soft' : action.mode === 'hard' ? '--hard' : '--mixed'
       return { argv: [['git', 'reset', flag, '--end-of-options', action.ref]] }
     }
+    case 'cherry-pick': {
+      if (!isSafeRev(action.ref)) return { error: 'invalid-name', message: `unsafe ref: ${action.ref}` }
+      const args = ['git', 'cherry-pick']
+      if (action.noCommit === true) args.push('--no-commit')
+      if (action.recordOrigin === true) args.push('-x')
+      args.push('--end-of-options', action.ref)
+      return { argv: [args] }
+    }
     case 'create-tag': {
       if (!isSafeRev(action.name) || action.name.startsWith('/')) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
       if (action.ref !== undefined && action.ref !== '' && !isSafeRev(action.ref)) {
@@ -390,8 +398,17 @@ export async function runAction(
       }
       // Merge/pull conflicts: surface as a typed conflicted result with the file
       // list so the client can jump straight to the conflict banner.
-      if (request.action.kind === 'merge' || request.action.kind === 'pull' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
+      // Cherry-pick lands in the same flow: its continue/abort already dispatches
+      // on the live operation kind (planContinueAbort).
+      if (request.action.kind === 'merge' || request.action.kind === 'pull' || request.action.kind === 'cherry-pick' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
         const files = await readConflictFiles(deps, root)
+        // Empty cherry-pick (change already applied): git exits 1 saying the
+        // pick "is now empty, possibly due to conflict resolution" and leaves
+        // the sequencer behind, but nothing is actually unmerged. Report it
+        // plainly instead of raising the conflict banner for it.
+        if (request.action.kind === 'cherry-pick' && isEmptyCherryPick(stderr + lastOutput, files)) {
+          return { ok: false, error: { code: 'git-error', message: `already applied, nothing to cherry-pick — use 'git cherry-pick --skip' to cancel the in-progress pick${where}` } }
+        }
         if (files.length > 0 || /conflict|CONFLICT|needs merge|already exists/i.test(stderr + lastOutput)) {
           const snapshot = await snapshotForSession(deps, config, request.sessionId)
           if (snapshot.ok) {
@@ -421,6 +438,15 @@ async function readConflictFiles(deps: SnapshotDeps, root: string): Promise<stri
   const res = await runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'conflicts', deps.signal)
   if (!('run' in res) || res.run.exitCode !== 0) return []
   return res.run.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '')
+}
+
+/**
+ * An "empty" cherry-pick stop reads like a conflict ("now empty, possibly due
+ * to conflict resolution") but has no unmerged files — the change is already
+ * applied. Pure helper so the rule stays unit-testable.
+ */
+export function isEmptyCherryPick(output: string, conflictFiles: readonly string[]): boolean {
+  return conflictFiles.length === 0 && /now empty|nothing to commit/i.test(output)
 }
 
 /**
