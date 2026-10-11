@@ -9,7 +9,8 @@ import { BranchIcon, GitHubIcon } from '../icons'
  * Delete-branch confirmation (GitHub Desktop style, our dialog metrics):
  * branch ref row plus, when the branch exists on a remote, a checkbox to
  * also delete it there (`git push <remote> --delete`). Local-only branches
- * skip the checkbox entirely.
+ * skip the checkbox entirely. When the branch is not fully merged, `git
+ * branch -d` refuses and the dialog offers a force delete (`-D`) instead.
  */
 export function DeleteBranchModal(props: {
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
@@ -23,16 +24,23 @@ export function DeleteBranchModal(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [alsoRemote, setAlsoRemote] = useState(false)
-  const submit = async (): Promise<void> => {
+  // Set when the host reports "not fully merged": the footer confirm turns
+  // into a force delete, keeping the also-remote choice intact.
+  const [needForce, setNeedForce] = useState(false)
+  const submit = async (force: boolean): Promise<void> => {
     setBusy(true)
     setError(null)
     const res = await props.onSubmit({
       kind: 'delete-branch', name: props.branchName,
+      ...(force ? { force: true } : {}),
       ...(alsoRemote && props.remote !== null ? { remote: props.remote } : {}),
     })
     setBusy(false)
     if (res.ok) props.onClose()
-    else setError(res.error ?? '')
+    else {
+      setError(res.error ?? '')
+      if (!force && /not fully merged/i.test(res.error ?? '')) setNeedForce(true)
+    }
   }
   return h(ModalShell, {
     title: props.t('modal.deleteBranchTitle'), onClose: props.onClose, children: [
@@ -48,7 +56,10 @@ export function DeleteBranchModal(props: {
         h('span', { key: 'n', className: 'gp-delbranch__name' }, `${props.remote}/${props.branchName}`),
       ]) : null,
       error ? h('div', { key: 'e', className: 'gp-modal__err' }, error) : null,
-      h(ModalFooter, { key: 'f', t: props.t, onClose: props.onClose, onConfirm: () => void submit(), busy, confirmLabel: props.t('side.delete') }),
+      h(ModalFooter, {
+        key: 'f', t: props.t, onClose: props.onClose, onConfirm: () => void submit(needForce), busy,
+        confirmLabel: props.t(needForce ? 'modal.forceDelete' : 'side.delete'),
+      }),
     ],
   })
 }

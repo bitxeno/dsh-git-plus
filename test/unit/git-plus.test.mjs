@@ -39,6 +39,9 @@ describe('planAction git-plus', () => {
     const plain = planAction({ kind: 'delete-branch', name: 'foo' }, false)
     assert.ok('argv' in plain)
     assert.deepEqual(plain.argv, [['git', 'branch', '-d', '--end-of-options', 'foo']])
+    const forced = planAction({ kind: 'delete-branch', name: 'foo', force: true }, false)
+    assert.ok('argv' in forced)
+    assert.deepEqual(forced.argv, [['git', 'branch', '-D', '--end-of-options', 'foo']])
     const full = planAction({ kind: 'delete-branch', name: 'foo', remote: 'origin' }, false)
     assert.ok('argv' in full)
     assert.deepEqual(full.argv, [
