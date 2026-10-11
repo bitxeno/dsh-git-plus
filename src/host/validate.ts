@@ -35,6 +35,28 @@ export function isSafeBranchName(name: string): boolean {
   return isSafeRev(name) && !name.startsWith('/')
 }
 
+/**
+ * A remote name for `git remote rename` / `set-url`: ref-safe, and no `/`
+ * (it becomes `refs/remotes/<name>/…`, so a slash would nest tracking refs).
+ */
+export function isSafeRemoteName(name: string): boolean {
+  return isSafeRev(name) && !name.includes('/')
+}
+
+/**
+ * A remote URL for `git remote set-url` / `git ls-remote`: a trimmed,
+ * non-empty single line that cannot be parsed as a git option. Colons,
+ * `@` and `/` are legitimate URL material, so only whitespace/control
+ * characters and a leading `-` are rejected.
+ */
+export function isSafeRemoteUrl(url: string): boolean {
+  const trimmed = url.trim()
+  if (trimmed === '' || trimmed.length > 2048) return false
+  if (trimmed.startsWith('-')) return false
+  if (/[\x00-\x20\x7f]/.test(trimmed)) return false
+  return true
+}
+
 // A .gitignore pattern is safe when it is a single line without control
 // characters that stays inside the work tree: no absolute paths, no `..`
 // segments (meaningless in a gitignore and a traversal smell). Leading

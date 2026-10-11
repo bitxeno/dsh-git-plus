@@ -6,7 +6,7 @@ import { dirname, join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
 import { detectOperation } from './queries.ts'
-import { isSafeBranchName, isSafeIgnorePattern, isSafePath, isSafeRev } from './validate.ts'
+import { isSafeBranchName, isSafeIgnorePattern, isSafePath, isSafeRemoteName, isSafeRemoteUrl, isSafeRev } from './validate.ts'
 import type { GitAction, GitActionRequest, GitActionResult, GitErrorCode, GitOperationKind } from './types.ts'
 
 export { isSafePath }
@@ -148,6 +148,20 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       const bad = safeBranch(action.branch)
       if (bad) return bad
       return { argv: [['git', 'push', '--delete', '--end-of-options', action.remote, action.branch]] }
+    }
+    case 'edit-remote': {
+      if (!isSafeRemoteName(action.oldName)) return { error: 'invalid-name', message: `unsafe remote: ${action.oldName}` }
+      if (!isSafeRemoteName(action.newName)) return { error: 'invalid-name', message: `unsafe remote: ${action.newName}` }
+      if (!isSafeRemoteUrl(action.url)) return { error: 'invalid-name', message: `unsafe remote url` }
+      // No `--end-of-options`: `git remote` subcommands take bare positionals
+      // (cf. the `remote get-url` probe in queries.ts); the validators above
+      // already reject leading-dash values.
+      const renamed = action.newName !== action.oldName
+      // The set-url step addresses the final name, so a rename runs first.
+      const argv: string[][] = []
+      if (renamed) argv.push(['git', 'remote', 'rename', action.oldName, action.newName])
+      argv.push(['git', 'remote', 'set-url', action.newName, action.url.trim()])
+      return { argv }
     }
     case 'rename-branch': {
       if (!isSafeBranchName(action.oldName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.oldName}` }

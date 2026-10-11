@@ -35,6 +35,7 @@ interface SidebarProps {
   readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push' | 'track', preset?: string, localNames?: readonly string[]) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
   readonly onDeleteRef: (kind: 'branch' | 'tag' | 'remote-branch', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean }) => void
+  readonly onEditRemote: (remote: string, url: string) => void
   readonly onPushBranch: (branch: string, remote: string) => void
   readonly onPushTag: (tag: string, remote: string) => void
   readonly onRenameBranch: (oldName: string) => void
@@ -86,11 +87,12 @@ function readFolderOpen(): Set<string> {
 type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'branch'; readonly name: string; readonly current: boolean }
   | { readonly x: number; readonly y: number; readonly kind: 'remote'; readonly name: string }
+  | { readonly x: number; readonly y: number; readonly kind: 'remote-folder'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'tag'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
 export function Sidebar(props: SidebarProps): JSX.Element {
-  const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, onPushBranch, onPushTag, onRenameBranch, t } = props
+  const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, onEditRemote, onPushBranch, onPushTag, onRenameBranch, t } = props
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
@@ -252,6 +254,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const remoteRows = renderRemoteNodes(remoteNodes, {
     folderOpen,
     onToggleFolder: toggleFolder,
+    onFolderMenu: (remoteName, x, y) => setMenu({ x, y, kind: 'remote-folder', name: remoteName }),
     remoteUrls: tree?.remoteUrls ?? {},
     knownRemotes: tree?.remotes ?? [],
     selection,
@@ -325,6 +328,16 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       {
         key: 'del', label: t('side.delete'), danger: true,
         onSelect: () => onDeleteRef('remote-branch', (menu as { name: string }).name),
+      },
+    ]
+    : menu.kind === 'remote-folder'
+    ? [
+      {
+        key: 'edit', label: t('menu.editRemote', { remote: (menu as { name: string }).name }),
+        onSelect: () => {
+          const remoteName = (menu as { name: string }).name
+          onEditRemote(remoteName, tree?.remoteUrls[remoteName] ?? '')
+        },
       },
     ]
     : [
@@ -505,6 +518,7 @@ function renderRemoteNodes(
   ctx: {
     readonly folderOpen: ReadonlySet<string>
     readonly onToggleFolder: (key: string) => void
+    readonly onFolderMenu: (remote: string, x: number, y: number) => void
     readonly remoteUrls: Record<string, string>
     readonly knownRemotes: readonly string[]
     readonly selection: SidebarSelection
@@ -530,12 +544,24 @@ function renderRemoteNodes(
       const icon = node.depth === 0 && known
         ? (isGitHubRemote(ctx.remoteUrls[topRemote] ?? '') ? h(GitHubIcon, { size: 13 }) : h(BranchIcon, { size: 13 }))
         : h(FolderIcon, { size: 13 })
+      // Only the top-level folder of a configured remote gets a menu (Edit);
+      // nested folders stay toggle-only.
+      const folderMenu = node.depth === 0 && known
+        ? {
+          onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => {
+            e.preventDefault()
+            e.stopPropagation()
+            ctx.onFolderMenu(topRemote, e.clientX, e.clientY)
+          },
+        }
+        : {}
       out.push(h('div', {
         key: `f-${key}`,
         className: 'gp-branch-folder',
         title: node.path,
         ...(node.depth > 0 ? { style: { paddingLeft: 22 + node.depth * 14 } } : {}),
         onClick: () => ctx.onToggleFolder(key),
+        ...folderMenu,
       }, [
         h(ChevronIcon, { key: 'c', size: 11, open }),
         h('span', { key: 'i', className: 'gp-row-icon gp-branch-folder__icon' }, icon),

@@ -18,6 +18,7 @@ import { MergeBranchModal } from './modals/MergeBranch'
 import { StashSaveModal } from './modals/StashSave'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
+import { EditRemoteModal } from './modals/EditRemote'
 import { DeleteBranchModal } from './modals/DeleteBranch'
 import { FilePreviewModal } from './modals/FilePreview'
 import { TrackRemoteModal } from './modals/TrackRemote'
@@ -42,6 +43,7 @@ type ModalState =
   | { kind: 'rename'; oldName: string }
   | { kind: 'checkout'; ref: string; subject: string }
   | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
+  | { kind: 'edit-remote'; name: string; url: string }
   | { kind: 'track'; remote: string; localNames: readonly string[] }
   | { kind: 'preview'; path: string }
   | { kind: 'confirm'; title: string; message: string; action: GitAction; danger?: boolean }
@@ -197,6 +199,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         danger: false,
       }),
       onRenameBranch: (oldName) => setModal({ kind: 'rename', oldName }),
+      onEditRemote: (remote, url) => setModal({ kind: 'edit-remote', name: remote, url }),
       onDeleteRef: (kind, name, opts) => {
         if (kind === 'branch') {
           setModal({ kind: 'delete-branch', name, remote: opts?.remote ?? null, remoteIsGitHub: opts?.remoteIsGitHub ?? false })
@@ -274,6 +277,7 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
   }
   if (modal.kind === 'preview') return h(FilePreviewModal, { remote: ctx.remote, sessionId: ctx.sessionId, path: modal.path, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'rename') return h(RenameBranchModal, { t: ctx.t, oldName: modal.oldName, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'edit-remote') return h(EditRemoteModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, remoteName: modal.name, remoteUrl: modal.url, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'confirm') return h(ConfirmModal, { t: ctx.t, title: modal.title, message: modal.message, action: modal.action, danger: modal.danger ?? true, onClose: ctx.onClose, onSubmit: ctx.onAction })
   return h(MergeBranchModal, { t: ctx.t, preset: modal.preset, onClose: ctx.onClose, onSubmit: ctx.onAction })
 }

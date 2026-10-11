@@ -6,7 +6,7 @@
 import { join, sep } from 'node:path'
 import type { SnapshotDeps, GitPanelConfig } from './core.ts'
 import { mapWorkspaceFailure, resolveBrowseRoot, resolveWorkspace, runCommand, snapshotForSession } from './core.ts'
-import { isSafePath, isSafeRev } from './validate.ts'
+import { isSafePath, isSafeRemoteUrl, isSafeRev } from './validate.ts'
 import { parseAuthors, parseBranches, parseBranchHeader, parseGraphLog, parseNameStatus, parseStashList, parseStatus, parseTags, markRemotePresence, parseRemoteUrls, stripRefNamespace } from './parser.ts'
 import { extractRepoAvatars, getCachedAvatars, isGhPathName, setCachedAvatars } from './github.ts'
 import type { DirEntry, GitBranch, GitCommit, GitFileStat, GitQueryRequest, GitQueryResponse, GraphCommit } from './types.ts'
@@ -61,6 +61,7 @@ export async function runQuery(
       case 'conflicts': return await queryConflicts(deps, root)
       case 'operation-state': return await queryOperationState(deps, root)
       case 'remote-url': return await queryRemoteUrl(deps, root)
+      case 'remote-test': return await queryRemoteTest(deps, root, q)
       case 'patch': return await queryPatch(deps, root, q)
       case 'quick-status': return await queryQuickStatus(deps, root)
       case 'host-platform': return { ok: true, value: { kind: 'host-platform', platform: process.platform } }
@@ -659,6 +660,25 @@ async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQuer
   if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
   const url = res.run.exitCode === 0 ? res.run.stdout.trim() : ''
   return { ok: true, value: { kind: 'remote-url', url } }
+}
+
+/** Probe whether a remote URL answers: `git ls-remote <url> HEAD`. */
+async function queryRemoteTest(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'remote-test' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafeRemoteUrl(q.url)) return { ok: false, error: { code: 'invalid-name', message: 'unsafe remote url' } }
+  // Short, fixed probe budget: this backs an interactive "Test Connection"
+  // button, so it must fail fast instead of riding the 5-minute fetch timeout.
+  const res = await runCommand(deps.run, ['git', 'ls-remote', q.url.trim(), 'HEAD'], root, 'remote-test', deps.signal, undefined, 15000)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: true, value: { kind: 'remote-test', reachable: false, message: 'connection timed out' } }
+  if (res.run.exitCode !== 0) {
+    return { ok: true, value: { kind: 'remote-test', reachable: false, message: res.run.stderr.trim() || `git exited ${res.run.exitCode}` } }
+  }
+  return { ok: true, value: { kind: 'remote-test', reachable: true } }
 }
 
 // Patch export limits: a patch file is a download, so bound both sides.

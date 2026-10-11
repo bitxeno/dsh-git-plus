@@ -164,6 +164,11 @@ export type GitAction = {
     readonly remote: string;
     readonly branch: string;
 } | {
+    readonly kind: 'edit-remote';
+    readonly oldName: string;
+    readonly newName: string;
+    readonly url: string;
+} | {
     readonly kind: 'rename-branch';
     readonly oldName: string;
     readonly newName: string;
@@ -312,6 +317,9 @@ export type GitQuery = {
 } | {
     readonly kind: 'remote-url';
 } | {
+    readonly kind: 'remote-test';
+    readonly url: string;
+} | {
     readonly kind: 'patch';
     readonly paths: readonly string[];
 } | {
@@ -436,6 +444,10 @@ export type GitQueryResult = {
 } | {
     readonly kind: 'remote-url';
     readonly url: string;
+} | {
+    readonly kind: 'remote-test';
+    readonly reachable: boolean;
+    readonly message?: string;
 } | {
     readonly kind: 'patch';
     readonly text: string;

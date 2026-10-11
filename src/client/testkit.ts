@@ -5,11 +5,12 @@
  */
 export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, markRemotePresence, parseBranchHeader, sumNumstat, parseRefs, stripRefNamespace, parseRemoteUrls, parseAuthors } from '../host/parser.ts'
 export { extractRepoAvatars, isGhPathName } from '../host/github.ts'
-export { isSafePath, isSafeRev, isSafeBranchName, isSafeIgnorePattern } from '../host/validate.ts'
+export { isSafePath, isSafeRev, isSafeBranchName, isSafeRemoteName, isSafeRemoteUrl, isSafeIgnorePattern } from '../host/validate.ts'
 export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
 export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch } from './branch-groups.ts'
+export { detectRemoteProtocol, convertRemoteUrl } from './remote-url.ts'
 export { escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from './ignore-pattern.ts'
 export { layoutGraph, graphWidth } from './git-graph.ts'
 export { authorAvatarUrl, githubUsernameFromNoreply, gravatarUrlFor, isGitHubRemote, md5Hex, parseGitHubRepo, avatarHueFor } from './avatar.ts'

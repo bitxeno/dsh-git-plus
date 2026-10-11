@@ -480,6 +480,17 @@ const CSS = `
 .gp-codejar{box-sizing:border-box;min-height:100%;margin:0;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-mono,monospace);font-size:12px;line-height:20px;padding:8px 10px;white-space:pre;tab-size:2}
 .gp-codejar:focus{outline:none;border-color:var(--dsw-alias-state-business-primary)}
 .gp-modal__err{color:var(--dsw-alias-state-error-primary);font-size:12px}
+.gp-modal__ok{color:var(--dsw-alias-state-success-primary);font-size:12px}
+/* Link-button inside a form dialog (Test Connection): Tower-style blue link. */
+.gp-modal__link{padding:0;border:none;background:none;color:var(--dsw-alias-state-business-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.gp-modal__link:disabled{opacity:.5;cursor:not-allowed;text-decoration:none}
+.gp-modal__test{display:flex;align-items:center;gap:8px;min-height:18px}
+.gp-modal__test .gp-modal__err{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* URL + protocol dropdown on one row (Edit-remote dialog). The input inherits
+ * the .gp-field text styles through the wrapping label. */
+.gp-remote-url{display:flex;align-items:center;gap:8px}
+.gp-remote-url input[type=text]{flex:1;min-width:0}
+.gp-remote-url .gp-dropselect{flex:none}
 .gp-field{display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
 .gp-field input[type=text]{box-sizing:border-box;height:32px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}
 .gp-modal__into{display:inline-flex;align-items:center;gap:6px;height:32px;font-size:13px;color:var(--dsw-alias-label-primary)}

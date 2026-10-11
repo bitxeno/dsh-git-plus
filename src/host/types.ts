@@ -155,6 +155,7 @@ export type GitAction =
   | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean; /** Set an upstream when creating (`--track`). */ readonly track?: boolean }
   | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean; /** Also delete `<name>` on `<remote>` (`git push <remote> --delete`). */ readonly remote?: string }
   | { readonly kind: 'delete-remote-branch'; readonly remote: string; readonly branch: string }
+  | { readonly kind: 'edit-remote'; readonly oldName: string; readonly newName: string; readonly url: string }
   | { readonly kind: 'rename-branch'; readonly oldName: string; readonly newName: string }
   | {
     readonly kind: 'create-tag'
@@ -241,6 +242,7 @@ export type GitQuery =
   | { readonly kind: 'conflicts' }
   | { readonly kind: 'operation-state' }
   | { readonly kind: 'remote-url' }
+  | { readonly kind: 'remote-test'; readonly url: string }
   | { readonly kind: 'patch'; readonly paths: readonly string[] }
   | { readonly kind: 'quick-status' }
   | { readonly kind: 'host-platform' }
@@ -330,6 +332,7 @@ export type GitQueryResult =
   | { readonly kind: 'conflicts'; readonly files: readonly string[] }
   | { readonly kind: 'operation-state'; readonly operation: GitOperationState | null }
   | { readonly kind: 'remote-url'; readonly url: string }
+  | { readonly kind: 'remote-test'; readonly reachable: boolean; readonly message?: string }
   | { readonly kind: 'patch'; readonly text: string; readonly truncated: boolean }
   | {
     readonly kind: 'github-avatars'
