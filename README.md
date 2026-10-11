@@ -40,6 +40,8 @@ The panel lives in the conversation view as the **Git Plus** tab.
 - Both Branches and Remotes fold `/`-separated names into folders, with the default branch first (the local default branch; `origin/main` under Remotes). In Remotes the default branch stays inside its own remote folder and leads it — it is never lifted out of `origin`.
 - Stash rows apply / pop / drop (drop arms with a second click).
 
+When the panel is narrow — a phone, or a desktop window dragged thin (measured on the panel itself, not the viewport) — the sidebar collapses into a permanent icon rail: the top cell opens the drawer, the next two switch views directly without opening anything, and the four group icons open the drawer already expanded and scrolled to that group. The drawer overlays the content rather than squeezing it; tapping a branch/tag, opening a dialog, tapping the backdrop, or pressing `Esc` closes it.
+
 **Local Changes** — stage / unstage / discard per file or in bulk, commit with amend, per-file diffs.
 
 **All Commits** — commit history with a graph rail, search by message or hash prefix, author and time filters, and a commit detail pane: commit body, change stats, per-file diffs (unified or split, image compare, deferred rendering for large diffs), file tree and raw content. Branch / tag / checkout can be launched from any commit row.

@@ -205,3 +205,17 @@ export function countTreeBranches(nodes: readonly BranchTreeNode[]): number {
   }
   return n
 }
+
+/**
+ * Drop `group` from the sidebar's closed-group set, returning the new contents;
+ * null when it was already open (nothing changed, so the caller can skip both
+ * the state write and the localStorage write). A rail tap means "show me this
+ * group", so the drawer expands the group it is about to scroll to. Pure, so
+ * that behaviour is testable without a DOM.
+ */
+export function expandGroup(closed: ReadonlySet<string>, group: string): string[] | null {
+  if (!closed.has(group)) return null
+  const next = new Set(closed)
+  next.delete(group)
+  return [...next]
+}

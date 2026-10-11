@@ -32,6 +32,33 @@ export function CloseIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M4 4l8 8M12 4l-8 8' })], size)
 }
 
+/** Panel-left glyph: a rounded card whose left column is filled (VS Code's
+ * activity-bar icon). The mobile rail's expand/collapse toggle. */
+export function PanelLeftIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('rect', { key: 'a', x: 1.75, y: 2.75, width: 12.5, height: 10.5, rx: 2 }),
+    h('path', { key: 'b', d: 'M6.25 2.75h-2.5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 2 2h2.5z', fill: 'currentColor', stroke: 'none' }),
+  ], size)
+}
+
+/** Stash: a box with a lifted lid (git's stash entry). */
+export function StashIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('path', { key: 'a', d: 'M2.5 6.5h11v6.5h-11z' }),
+    h('path', { key: 'b', d: 'M1.75 6.5 3.25 3h9.5l1.5 3.5' }),
+  ], size)
+}
+
+/** Remote: two stacked server cards, each with a leading status dot. */
+export function RemoteIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('rect', { key: 'a', x: 2.25, y: 2.25, width: 11.5, height: 4.5, rx: 1.2 }),
+    h('rect', { key: 'b', x: 2.25, y: 9.25, width: 11.5, height: 4.5, rx: 1.2 }),
+    h('circle', { key: 'c', cx: 4.4, cy: 4.5, r: 0.75, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { key: 'd', cx: 4.4, cy: 11.5, r: 0.75, fill: 'currentColor', stroke: 'none' }),
+  ], size)
+}
+
 export function RefreshIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M13 8a5 5 0 1 1-1.5-3.5' }), h('path', { key: 'b', d: 'M13 2v3h-3' })], size)
 }

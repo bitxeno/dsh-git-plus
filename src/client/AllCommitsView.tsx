@@ -31,6 +31,7 @@ import { IconUsersOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useGitHubAvatarMap } from './github-avatars'
 import { useBranchTree, useCommitDetail, useHistory, type HistoryFilter } from './overview-hooks'
 import { segButtons } from './seg'
+import { useNarrow } from './narrow'
 import type { DiffViewMode } from './types'
 
 interface OverviewProps {
@@ -61,20 +62,6 @@ const GRID_TPL = 'minmax(0,1fr) 120px 72px 96px'
  * Measured on the toolbar (not the input): flex-wrap keeps the input's own
  * width nearly constant while the toolbar's width is the real space signal. */
 const SEARCH_HINT_MIN_W = 260
-
-/** Observe an element's width; true once it is measured and below `min`. */
-function useNarrow(el: HTMLElement | null, min: number): boolean {
-  const [narrow, setNarrow] = useState(false)
-  useEffect(() => {
-    if (el === null || typeof ResizeObserver === 'undefined') return
-    const measure = (): void => setNarrow(el.clientWidth > 0 && el.clientWidth < min)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [el, min])
-  return narrow
-}
 
 export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, currentBranch, onBranchAt, onTagAt, onCheckoutAt, onResetAt, onCherryPickAt }: OverviewProps): JSX.Element {
   const [filter, setFilter] = useState<HistoryFilter>({ ref: null, search: '', author: '', since: '' })

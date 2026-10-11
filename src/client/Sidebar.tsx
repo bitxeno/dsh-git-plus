@@ -7,18 +7,23 @@
  * default branch first inside its own folder. Clicking a branch/tag filters All
  * Commits; row actions live in a right-click menu; double-click a branch to
  * check it out, double-click a tag to confirm-checkout its code.
+ *
+ * Two layouts: an in-flow column (wide) and an overlay drawer (narrow, phone),
+ * selected by `mode`. The drawer adds a header with a collapse control and
+ * takes `onClose` for the selections that must dismiss it.
  */
-import { createElement as h, useEffect, useMemo, useState } from 'react'
+import { createElement as h, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
+import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, PanelLeftIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
 import { Tip } from './Tip'
 import { isGitHubRemote } from './avatar'
-import { buildBranchFolderTree, splitDefaultBranch, type BranchTreeNode } from './branch-groups'
+import { buildBranchFolderTree, expandGroup, splitDefaultBranch, type BranchTreeNode } from './branch-groups'
+import type { RailGroup } from './SidebarRail'
 
 export interface SidebarSelection {
   readonly view: SubTab
@@ -40,6 +45,12 @@ interface SidebarProps {
   readonly onPushTag: (tag: string, remote: string) => void
   readonly onRenameBranch: (oldName: string) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
+  /** 'column' = in-flow resizable column (wide); 'drawer' = overlay (narrow). */
+  readonly mode?: 'column' | 'drawer'
+  /** Drawer mode: dismiss the overlay. Column mode never calls it. */
+  readonly onClose?: () => void
+  /** Drawer mode: the group the rail asked for — expanded and scrolled to. */
+  readonly revealGroup?: RailGroup | null
 }
 
 interface BranchTree {
@@ -92,7 +103,10 @@ type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
 export function Sidebar(props: SidebarProps): JSX.Element {
-  const { remote, sessionId, snapshot, selection, onSelect, onAction, onOpenModal, onCheckoutRef, onDeleteRef, onEditRemote, onPushBranch, onPushTag, onRenameBranch, t } = props
+  const { remote, sessionId, snapshot, selection, onAction, t } = props
+  const drawer = props.mode === 'drawer'
+  const onClose = props.onClose
+  const revealGroup = props.revealGroup ?? null
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
@@ -105,6 +119,31 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   // branch deletes without waiting for the next snapshot poll).
   const [reloadSeq, setReloadSeq] = useState(0)
   const refreshKey = snapshot.checkedAt
+  // Group-head elements, keyed by group, so a rail tap can scroll the drawer to
+  // the group it just expanded.
+  const headRefs = useRef(new Map<string, HTMLDivElement>())
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  // A rail tap means "show me this group": expand it and scroll it to the top
+  // of the drawer's list. Keyed on the group, so a re-render with the same
+  // target never re-scrolls under the user's finger.
+  useEffect(() => {
+    if (!drawer || revealGroup === null) return
+    setClosed((prev) => {
+      const next = expandGroup(prev, revealGroup)
+      if (next === null) return prev
+      try { localStorage.setItem(CLOSED_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return new Set(next)
+    })
+    const head = headRefs.current.get(revealGroup)
+    const body = bodyRef.current
+    if (head === undefined || body === null) return
+    // Rect deltas, not offsetTop: the head's offsetParent is the (absolutely
+    // positioned) drawer, so offsetTop would include the header/nav/toolbar
+    // heights that .gp-side__body's scrollTop does not.
+    const delta = head.getBoundingClientRect().top - body.getBoundingClientRect().top
+    body.scrollTop += delta - 8
+  }, [drawer, revealGroup])
 
   useEffect(() => {
     let alive = true
@@ -144,6 +183,12 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     })
   }
 
+  /** Keep (or drop) a group head element so a rail tap can scroll to it. */
+  const registerHead = (group: string, el: HTMLDivElement | null): void => {
+    if (el === null) headRefs.current.delete(group)
+    else headRefs.current.set(group, el)
+  }
+
   const toggleFolder = (path: string): void => {
     setFolderOpen((prev) => {
       const next = new Set(prev)
@@ -166,7 +211,32 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     return { pinnedDefault: pinned, branchNodes: buildBranchFolderTree(rest) }
   }, [local, tree])
 
-  const run = async (action: GitAction): Promise<void> => { await onAction(action) }
+  // Drawer mode: every action that leaves the sidebar — a view switch, a ref
+  // filter, a dialog — dismisses the overlay, because the result happens in the
+  // content pane the drawer was covering. Toggling a group or refreshing does
+  // not, since those stay inside the sidebar. Wrapping the props (rather than
+  // guarding each call site) keeps the whole list drawer-aware at one point.
+  const close = (): void => { if (drawer) onClose?.() }
+  const onSelect: SidebarProps['onSelect'] = (sel) => {
+    // Drawer mode: only a ref filter dismisses. The view nav inside the drawer
+    // is a plain in-sidebar control (it has no rail equivalent), so it must not
+    // behave differently from a group toggle.
+    if (drawer && sel.refFilter !== null) close()
+    props.onSelect(sel)
+  }
+  const onOpenModal: SidebarProps['onOpenModal'] = (kind, preset, localNames) => {
+    close()
+    props.onOpenModal(kind, preset, localNames)
+  }
+  const onCheckoutRef: SidebarProps['onCheckoutRef'] = (ref, subject) => { close(); props.onCheckoutRef(ref, subject) }
+  const onDeleteRef: SidebarProps['onDeleteRef'] = (kind, name, opts) => { close(); props.onDeleteRef(kind, name, opts) }
+  const onEditRemote: SidebarProps['onEditRemote'] = (name, url) => { close(); props.onEditRemote(name, url) }
+  const onPushBranch: SidebarProps['onPushBranch'] = (branch, remote) => { close(); props.onPushBranch(branch, remote) }
+  const onPushTag: SidebarProps['onPushTag'] = (tag, remote) => { close(); props.onPushTag(tag, remote) }
+  const onRenameBranch: SidebarProps['onRenameBranch'] = (oldName) => { close(); props.onRenameBranch(oldName) }
+  // A direct action (checkout, stash apply/pop/drop) runs in place with no
+  // dialog, so the drawer has to close for those too.
+  const run = async (action: GitAction): Promise<void> => { close(); await onAction(action) }
 
   const pushRemote = (tree?.remotes.includes('origin') ?? false) ? 'origin' : tree?.remotes[0]
 
@@ -364,7 +434,19 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       },
     ]
 
-  return h('div', { className: 'gp-side' }, [
+  return h('div', { className: drawer ? 'gp-side gp-side--drawer' : 'gp-side' }, [
+    // Drawer header: the collapse control sits in the rail's own top cell row,
+    // so the finger target does not move between open and closed states.
+    drawer ? h('div', { key: 'dh', className: 'gp-side__dhead' }, [
+      h('span', { key: 't', className: 'gp-side__dtitle' }, t('panel.tab')),
+      h(Tip, {
+        key: 'x', label: t('side.collapse'), side: 'right',
+        children: h('button', {
+          type: 'button', className: 'gp-icon-btn', 'aria-label': t('side.collapse'),
+          onClick: () => { close() },
+        }, h(PanelLeftIcon, { size: 15 })),
+      }),
+    ]) : null,
     h('div', { key: 'top', className: 'gp-side__top' }, [
       h('button', {
         key: 'local', type: 'button',
@@ -395,33 +477,44 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       }),
     ]),
     error ? h('div', { key: 'err', className: 'gp-side__error' }, t('overview.branchesError')) : null,
-    h(Group, {
-      key: 'branches', title: t('side.branches'), count: local.length, open: !closed.has('branches'),
-      onToggle: () => toggleClosed('branches'),
-      actions: h(Tip, {
-        label: t('side.refresh'),
-        children: h('button', { type: 'button', onClick: () => setReloadSeq((n) => n + 1) }, h(RefreshIcon, { size: 15 })),
+    // Groups live in their own scroll body so the drawer can keep the header,
+    // view nav and sync toolbar pinned while the (potentially long) list
+    // scrolls. Column mode leaves it a plain flex column: the outer
+    // `.gp-plus__side` is already the scroll container there.
+    h('div', { key: 'body', className: 'gp-side__body', ref: bodyRef }, [
+      h(Group, {
+        key: 'branches', title: t('side.branches'), count: local.length, open: !closed.has('branches'),
+        onToggle: () => toggleClosed('branches'),
+        headRef: (el) => registerHead('branches', el),
+        actions: h(Tip, {
+          label: t('side.refresh'),
+          children: h('button', { type: 'button', onClick: () => setReloadSeq((n) => n + 1) }, h(RefreshIcon, { size: 15 })),
+        }),
+        children: branchRows,
       }),
-      children: branchRows,
-    }),
-    h(Group, {
-      key: 'tags', title: t('side.tags'), count: tags.length, open: !closed.has('tags'),
-      onToggle: () => toggleClosed('tags'),
-      actions: null,
-      children: tagRows,
-    }),
-    h(Group, {
-      key: 'stashes', title: t('side.stashes'), count: snapshot.stashCount, open: !closed.has('stashes'),
-      onToggle: () => toggleClosed('stashes'),
-      onMenu: (x, y) => setMenu({ x, y, kind: 'stash-create' }),
-      actions: null,
-      children: stashRows,
-    }),
-    h(Group, {
-      key: 'remotes', title: t('side.remotes'), count: (tree?.remote ?? []).length, open: !closed.has('remotes'),
-      onToggle: () => toggleClosed('remotes'), actions: null,
-      children: remoteRows,
-    }),
+      h(Group, {
+        key: 'tags', title: t('side.tags'), count: tags.length, open: !closed.has('tags'),
+        onToggle: () => toggleClosed('tags'),
+        headRef: (el) => registerHead('tags', el),
+        actions: null,
+        children: tagRows,
+      }),
+      h(Group, {
+        key: 'stashes', title: t('side.stashes'), count: snapshot.stashCount, open: !closed.has('stashes'),
+        onToggle: () => toggleClosed('stashes'),
+        headRef: (el) => registerHead('stashes', el),
+        onMenu: (x, y) => setMenu({ x, y, kind: 'stash-create' }),
+        actions: null,
+        children: stashRows,
+      }),
+      h(Group, {
+        key: 'remotes', title: t('side.remotes'), count: (tree?.remote ?? []).length, open: !closed.has('remotes'),
+        onToggle: () => toggleClosed('remotes'),
+        headRef: (el) => registerHead('remotes', el),
+        actions: null,
+        children: remoteRows,
+      }),
+    ]),
     menu !== null ? h(ContextMenu, { key: 'menu', x: menu.x, y: menu.y, items: menuItems, onClose: () => setMenu(null) }) : null,
   ])
 }
@@ -630,12 +723,15 @@ function Group(props: {
   readonly open: boolean
   readonly onToggle: () => void
   readonly onMenu?: (x: number, y: number) => void
+  /** Drawer mode: collects the head element for scroll-to-group. */
+  readonly headRef?: (el: HTMLDivElement | null) => void
   readonly actions: JSX.Element | null
   readonly children: readonly (JSX.Element | null)[]
 }): JSX.Element {
   return h('div', { className: 'gp-branch-group' }, [
     h('div', {
       key: 'h', className: 'gp-branch-group__head', onClick: props.onToggle,
+      ref: props.headRef,
       ...(props.onMenu !== undefined ? {
         onContextMenu: (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
           e.preventDefault()

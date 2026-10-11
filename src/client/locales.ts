@@ -160,6 +160,8 @@ export const zh = {
   'side.current': '当前',
   'side.localOnly': '仅本地存在，远端无此分支',
   'side.default': '默认',
+  'side.expand': '展开侧边栏',
+  'side.collapse': '收起侧边栏',
   // modals
   'modal.createBranch': '新建分支',
   'modal.trackRemote': '跟踪远端分支',
@@ -437,6 +439,8 @@ export const en: Record<GitKey, string> = {
   'side.current': 'current',
   'side.localOnly': 'Local only — no matching remote branch',
   'side.default': 'default',
+  'side.expand': 'Expand sidebar',
+  'side.collapse': 'Collapse sidebar',
   'modal.createBranch': 'Create branch',
   'modal.trackRemote': 'Track Remote Branch',
   'modal.trackRemoteDesc': 'Creates new local branch which tracks remote branch',

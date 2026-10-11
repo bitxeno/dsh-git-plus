@@ -9,7 +9,7 @@ export { isSafePath, isSafeRev, isSafeBranchName, isSafeRemoteName, isSafeRemote
 export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked, isEmptyCherryPick } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
-export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch } from './branch-groups.ts'
+export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch, expandGroup } from './branch-groups.ts'
 export { detectRemoteProtocol, convertRemoteUrl } from './remote-url.ts'
 export { escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from './ignore-pattern.ts'
 export { layoutGraph, graphWidth } from './git-graph.ts'

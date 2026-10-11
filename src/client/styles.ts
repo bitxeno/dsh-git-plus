@@ -422,7 +422,51 @@ const CSS = `
 .gp-plus__content{flex:1 1 0;min-width:0;display:flex;overflow:hidden}
 .gp-plus__main{display:flex;width:100%;min-height:0}
 .gp-plus__view{display:flex;flex-direction:column;width:100%;min-height:0}
+
+/* ---- narrow mode: icon rail + overlay drawer (phone / thin window) ----
+ * Chosen by the body's measured width, not a media query. The rail is
+ * permanent: it keeps the panel oriented and the two views one tap away. The
+ * drawer overlays instead of squeezing, because a 260px column would leave a
+ * phone's content pane unreadable. z-index 20/21 stays under every dialog
+ * (gp-modal-backdrop 50, gp-dialog-backdrop 1000) so modals always win. */
+.gp-plus__body--narrow{position:relative}
+.gp-srail{flex:0 0 46px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+.gp-srail__top{padding-bottom:6px}
+.gp-srail__sep{width:22px;height:1px;margin:6px 0;background:var(--dsw-alias-border-l2);flex:none}
+/* 44px tall: the smallest comfortable touch target (iOS HIG). */
+.gp-srail-btn{position:relative;display:flex;align-items:center;justify-content:center;width:38px;height:44px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}
+.gp-srail-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.gp-srail-btn--active{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 14%,transparent);color:var(--dsw-alias-state-business-primary)}
+.gp-srail-btn__icon{display:inline-flex;align-items:center;justify-content:center}
+.gp-srail-btn__badge{position:absolute;top:4px;right:2px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--dsw-alias-state-warn-primary);color:#fff;font-size:10px;line-height:15px;font-weight:600;text-align:center}
+/* Drawer: absolute inside the body so it never reflows the content column.
+ * Closed = translated fully out of the body, not display:none — it keeps its
+ * tree state and can slide. visibility (not just pointer-events) keeps its
+ * buttons out of the tab order while closed, and is transitioned so it only
+ * flips once the slide-out finishes (visibility interpolates discretely at the
+ * end of its transition when leaving the visible state). touch-action:pan-y lets the
+ * list scroll while forbidding the browser from claiming a horizontal stroke
+ * as a pan — the host's own mobile drawer does the same. */
+.gp-plus__drawer{position:absolute;top:0;bottom:0;left:46px;z-index:21;width:min(86vw,300px);box-sizing:border-box;overflow:hidden;background:var(--dsw-alias-bg-layer-2);border-right:1px solid var(--dsw-alias-border-l1);box-shadow:0 8px 28px rgba(0,0,0,.18);transform:translateX(calc(-100% - 46px));visibility:hidden;pointer-events:none;touch-action:pan-y pinch-zoom;transition:transform .2s ease,visibility .2s ease}
+.gp-plus__drawer--open{transform:none;visibility:visible;pointer-events:auto}
+@media (prefers-reduced-motion: reduce){.gp-plus__drawer{transition:none}}
+/* Backdrop covers only the content area: the rail and the drawer stay above it. */
+.gp-plus__backdrop{position:absolute;inset:0 0 0 46px;z-index:20;background:rgba(0,0,0,.32);opacity:0;pointer-events:none;transition:opacity .2s ease}
+.gp-plus__backdrop--on{opacity:1;pointer-events:auto}
+@media (prefers-reduced-motion: reduce){.gp-plus__backdrop{transition:none}}
 .gp-side{padding:8px;display:flex;flex-direction:column;gap:8px}
+/* Drawer-mode sidebar: a pinned header + view nav + sync toolbar, then a
+ * scrolling group list (the .gp-side__body element owns that scroll). Column
+ * mode keeps the flat flex column and lets .gp-plus__side scroll it all, so
+ * .gp-side__body stays a plain passthrough there (no second scrollport). */
+.gp-side--drawer{padding:0;gap:0;height:100%;box-sizing:border-box}
+.gp-side__dhead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.gp-side__dtitle{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp-side--drawer .gp-side__top,.gp-side--drawer .gp-side__net{margin:8px 8px 0;flex:none}
+/* Same vertical rhythm as the groups had as direct children of .gp-side, so
+ * wrapping them in a scroll body changes nothing in column mode. */
+.gp-side__body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px}
+.gp-side--drawer .gp-side__body{overflow-y:auto;overscroll-behavior:contain;padding:8px}
 .gp-side__top{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;padding:4px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}
 .gp-side__nav{display:flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;font-weight:500;white-space:nowrap;cursor:pointer;text-align:center;min-width:0}
 .gp-side__nav:hover{color:var(--dsw-alias-label-primary)}

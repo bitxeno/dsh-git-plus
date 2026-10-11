@@ -1,6 +1,11 @@
 /**
  * dsh-git-plus Panel: left Sidebar + right content (Local Changes / All Commits).
  * Views reuse ChangesTab (local) + OverviewTab (commits); FilesTab for non-repo.
+ *
+ * Two layouts, chosen by the body's own measured width (see NARROW_MIN_PX):
+ * wide keeps the sidebar as a resizable in-flow column; narrow — a phone, or a
+ * desktop window dragged thin — collapses it behind a permanent icon rail and
+ * an overlay drawer, because a 260px column would leave the content unreadable.
  */
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
@@ -12,6 +17,8 @@ import { ChangesTab } from './LocalChangesView'
 import { OverviewTab } from './AllCommitsView'
 import { FilesTab } from './FilesTab'
 import { Sidebar, readSidebarWidth, writeSidebarWidth, type SidebarSelection } from './Sidebar'
+import { SidebarRail, type RailGroup } from './SidebarRail'
+import { useNarrow } from './narrow'
 import { CreateBranchModal } from './modals/CreateBranch'
 import { CreateTagModal } from './modals/CreateTag'
 import { MergeBranchModal } from './modals/MergeBranch'
@@ -59,10 +66,25 @@ function normalizeSubTab(tab: SubTab | 'overview' | 'changes'): SubTab {
   return tab
 }
 
+/**
+ * Body width below which the sidebar collapses to the icon rail + drawer.
+ * Measured on the panel, not the viewport: the panel is a nested surface, so a
+ * media query would disagree with the space it really has (split views, host
+ * sidebars, display scaling). 600px leaves the content pane at ~554px once the
+ * 46px rail is out — a phone (390px) always collapses, a 768px tablet does not.
+ */
+const NARROW_MIN_PX = 600
+
 export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
   const [selection, setSelection] = useState<SidebarSelection | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
   const [sideWidth, setSideWidth] = useState<number>(readSidebarWidth)
+  // Drawer state lives in memory only, never localStorage: re-opening the panel
+  // on a phone must start collapsed, so a previous "I had it open" never greets
+  // the user with a full-screen drawer.
+  const [drawerGroup, setDrawerGroup] = useState<RailGroup | null>(null)
+  const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null)
+  const narrow = useNarrow(bodyEl, NARROW_MIN_PX)
   const view = useGitView(sessionId)
   const remote = gitPanelRemoteOf(ctx)
   const filesOnly = view.state === 'error' && view.error.code === 'not-a-git-repo'
@@ -72,6 +94,19 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
   const visited = useRef<{ sessionId?: string; views: Set<string> }>({ views: new Set() })
   if (visited.current.sessionId !== sessionId) visited.current = { sessionId, views: new Set() }
   if (active !== null) visited.current.views.add(active.view)
+
+  // Leaving narrow mode drops the drawer with it (no orphaned overlay).
+  useEffect(() => {
+    if (!narrow) setDrawerGroup(null)
+  }, [narrow])
+
+  // Esc closes the drawer — the keyboard path a narrow desktop window needs.
+  useEffect(() => {
+    if (drawerGroup === null) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setDrawerGroup(null) }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [drawerGroup])
 
   useEffect(() => {
     if (!hasSession(sessionId)) return
@@ -235,18 +270,62 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
           action: { kind: 'delete-tag', name },
         })
       },
+      ...(narrow ? {
+        mode: 'drawer' as const,
+        onClose: () => setDrawerGroup(null),
+        revealGroup: drawerGroup,
+      } : {}),
+      t,
+    })
+  })()
+
+  const changeCount = view.state === 'ready'
+    ? view.snapshot.staged + view.snapshot.modified + view.snapshot.untracked
+    : 0
+  const rail = ((): JSX.Element | null => {
+    if (!narrow || !hasSession(sessionId)) return null
+    if (view.state !== 'ready' || active === null) return null
+    return h(SidebarRail, {
+      view: active.view === 'local' ? 'local' : 'commits',
+      changeCount,
+      openGroup: drawerGroup,
+      onSelectView: (v) => setSelection({ view: v, refFilter: active?.refFilter ?? null }),
+      onOpenGroup: (g) => setDrawerGroup(g),
+      onToggleDrawer: () => setDrawerGroup((prev) => prev === null ? 'branches' : null),
       t,
     })
   })()
 
   return h('div', { className: 'gp-panel gp-plus', 'data-conversation-composer-overlay': '' }, [
-    h('div', { key: 'body', className: 'gp-plus__body' }, [
-      sidebar !== null ? h('div', { key: 'side', className: 'gp-plus__side', style: { flex: `0 0 ${sideWidth}px` } }, sidebar) : null,
-      sidebar !== null ? h('div', {
+    h('div', {
+      key: 'body',
+      className: `gp-plus__body${narrow ? ' gp-plus__body--narrow' : ''}`,
+      ref: setBodyEl,
+    }, [
+      // Narrow: the rail is permanent, the sidebar becomes an overlay drawer,
+      // and the width drag is gone (there is no column left to resize). The
+      // drawer stays mounted while collapsed — translated off, not unmounted —
+      // so it keeps its tree/scroll state and can animate on the way in.
+      rail,
+      narrow
+        ? (sidebar !== null ? h('div', {
+          key: 'drawer',
+          className: `gp-plus__drawer${drawerGroup !== null ? ' gp-plus__drawer--open' : ''}`,
+          'aria-hidden': drawerGroup === null,
+        }, sidebar) : null)
+        : sidebar !== null ? h('div', { key: 'side', className: 'gp-plus__side', style: { flex: `0 0 ${sideWidth}px` } }, sidebar) : null,
+      narrow ? null : sidebar !== null ? h('div', {
         key: 'div', className: 'gp-resizer',
         onMouseDown: onDividerDown as unknown as () => void,
       }) : null,
       h('div', { key: 'content', className: 'gp-plus__content' }, body),
+      narrow && sidebar !== null
+        ? h('div', {
+          key: 'backdrop',
+          className: `gp-plus__backdrop${drawerGroup !== null ? ' gp-plus__backdrop--on' : ''}`,
+          onClick: () => setDrawerGroup(null),
+        })
+        : null,
     ]),
     modal !== null ? h('div', { key: 'modal' }, renderModal(modal, { remote, sessionId: sessionId ?? '', onAction, onClose: () => setModal(null), t })) : null,
   ])
