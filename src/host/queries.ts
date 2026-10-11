@@ -66,6 +66,10 @@ export async function runQuery(
       case 'quick-status': return await queryQuickStatus(deps, root)
       case 'host-platform': return { ok: true, value: { kind: 'host-platform', platform: process.platform } }
       case 'github-avatars': return await queryGithubAvatars(deps, root, q)
+      default:
+        // Unknown to this host (newer client than the running host): typed
+        // error instead of an undefined response.
+        return { ok: false, error: { code: 'not-implemented', message: 'unknown query (restart dsh web to update the host)' } }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

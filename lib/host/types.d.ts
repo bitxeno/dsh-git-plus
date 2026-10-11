@@ -164,6 +164,10 @@ export type GitAction = {
     readonly remote: string;
     readonly branch: string;
 } | {
+    readonly kind: 'reset-branch';
+    readonly ref: string;
+    readonly mode: 'soft' | 'mixed' | 'hard';
+} | {
     readonly kind: 'edit-remote';
     readonly oldName: string;
     readonly newName: string;

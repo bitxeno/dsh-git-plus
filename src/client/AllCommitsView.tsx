@@ -45,10 +45,13 @@ interface OverviewProps {
   readonly externalRef?: string | null
   /** Snapshot HEAD (short hash); anchors dimming when HEAD is detached. */
   readonly headHash?: string | null
+  /** Current branch name; null when detached (hides the reset menu item). */
+  readonly currentBranch?: string | null
   /** Commit row actions (context menu + double-click checkout). */
   readonly onBranchAt: (hash: string) => void
   readonly onTagAt: (hash: string) => void
   readonly onCheckoutAt: (hash: string, subject: string) => void
+  readonly onResetAt: (hash: string, shortHash: string, subject: string) => void
 }
 
 const GRID_TPL = 'minmax(0,1fr) 120px 72px 96px'
@@ -72,7 +75,7 @@ function useNarrow(el: HTMLElement | null, min: number): boolean {
   return narrow
 }
 
-export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, onBranchAt, onTagAt, onCheckoutAt }: OverviewProps): JSX.Element {
+export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t, externalRef, headHash, currentBranch, onBranchAt, onTagAt, onCheckoutAt, onResetAt }: OverviewProps): JSX.Element {
   const [filter, setFilter] = useState<HistoryFilter>({ ref: null, search: '', author: '', since: '' })
   // Sidebar selection anchors dimming (one-way sync). History always loads
   // everything; rows outside the selected ref's ancestry render dimmed, so a
@@ -307,6 +310,10 @@ export function OverviewTab({ remote, sessionId, refreshKey, defaultDiffView, t,
         { key: 'tg', label: t('menu.createTagAt'), onSelect: () => onTagAt(rowMenu.hash) },
         { key: 's1', separator: true },
         { key: 'co', label: t('menu.checkoutCommit'), onSelect: () => onCheckoutAt(rowMenu.hash, rowMenu.subject) },
+        ...(currentBranch !== undefined && currentBranch !== null && currentBranch !== '' ? [{
+          key: 'rs', label: t('menu.resetBranchToHere', { branch: currentBranch }),
+          onSelect: () => onResetAt(rowMenu.hash, rowMenu.shortHash, rowMenu.subject),
+        }] : []),
         { key: 's2', separator: true },
         { key: 'cp', label: t('menu.copySha'), onSelect: () => void copyText(rowMenu.hash) },
         { key: 'cs', label: t('menu.copyShortSha'), onSelect: () => void copyText(rowMenu.shortHash) },

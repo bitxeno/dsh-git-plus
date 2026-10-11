@@ -19,6 +19,7 @@ import { StashSaveModal } from './modals/StashSave'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
 import { EditRemoteModal } from './modals/EditRemote'
+import { ResetBranchModal } from './modals/ResetBranch'
 import { DeleteBranchModal } from './modals/DeleteBranch'
 import { FilePreviewModal } from './modals/FilePreview'
 import { TrackRemoteModal } from './modals/TrackRemote'
@@ -42,6 +43,7 @@ type ModalState =
   | { kind: 'push'; branch?: string; remote?: string }
   | { kind: 'rename'; oldName: string }
   | { kind: 'checkout'; ref: string; subject: string }
+  | { kind: 'reset'; ref: string; shortHash: string; branch: string; subject: string }
   | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
   | { kind: 'edit-remote'; name: string; url: string }
   | { kind: 'track'; remote: string; localNames: readonly string[] }
@@ -167,9 +169,14 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         defaultDiffView: snapshot.defaultDiffView, t,
         externalRef: active.refFilter ?? undefined,
         headHash: snapshot.head,
+        currentBranch: snapshot.branch,
         onBranchAt: (hash) => setModal({ kind: 'branch', startPoint: hash }),
         onTagAt: (hash) => setModal({ kind: 'tag', ref: hash }),
         onCheckoutAt: (hash, subject) => setModal({ kind: 'checkout', ref: hash, subject }),
+        onResetAt: (hash, shortHash, subject) => {
+          if (snapshot.branch === null) return
+          setModal({ kind: 'reset', ref: hash, shortHash, branch: snapshot.branch, subject })
+        },
       })) : null,
     ])
   })()
@@ -266,6 +273,7 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
     ...(modal.remote !== undefined ? { initialRemote: modal.remote } : {}),
   })
   if (modal.kind === 'checkout') return h(CheckoutModal, { t: ctx.t, refName: modal.ref, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'reset') return h(ResetBranchModal, { t: ctx.t, branch: modal.branch, refName: modal.ref, shortHash: modal.shortHash, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'delete-branch') return h(DeleteBranchModal, { t: ctx.t, branchName: modal.name, remote: modal.remote, remoteIsGitHub: modal.remoteIsGitHub, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'track') {
     const segs = modal.remote.split('/')

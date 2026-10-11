@@ -51,6 +51,18 @@ describe('planAction git-plus', () => {
     assert.ok('error' in planAction({ kind: 'delete-branch', name: '-evil', remote: 'origin' }, false))
     assert.ok('error' in planAction({ kind: 'delete-branch', name: 'foo', remote: '-evil' }, false))
   })
+  it('plans reset-branch per mode', () => {
+    for (const [mode, flag] of [['soft', '--soft'], ['mixed', '--mixed'], ['hard', '--hard']]) {
+      const r = planAction({ kind: 'reset-branch', ref: 'abc1234', mode }, false)
+      assert.ok('argv' in r)
+      assert.deepEqual(r.argv, [['git', 'reset', flag, '--end-of-options', 'abc1234']])
+    }
+    assert.ok('error' in planAction({ kind: 'reset-branch', ref: '-evil', mode: 'mixed' }, false))
+  })
+  it('answers unknown actions with a typed error instead of throwing', () => {
+    const r = planAction({ kind: 'future-action' }, false)
+    assert.ok('error' in r)
+  })
   it('plans reveal per platform', () => {
     const mac = planAction({ kind: 'reveal', path: 'docs/a.png' }, false, 'darwin')
     assert.ok('argv' in mac)

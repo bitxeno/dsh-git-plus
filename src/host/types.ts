@@ -155,6 +155,7 @@ export type GitAction =
   | { readonly kind: 'create-branch'; readonly name: string; readonly startPoint?: string; readonly checkout?: boolean; /** Set an upstream when creating (`--track`). */ readonly track?: boolean }
   | { readonly kind: 'delete-branch'; readonly name: string; readonly force?: boolean; /** Also delete `<name>` on `<remote>` (`git push <remote> --delete`). */ readonly remote?: string }
   | { readonly kind: 'delete-remote-branch'; readonly remote: string; readonly branch: string }
+  | { readonly kind: 'reset-branch'; readonly ref: string; readonly mode: 'soft' | 'mixed' | 'hard' }
   | { readonly kind: 'edit-remote'; readonly oldName: string; readonly newName: string; readonly url: string }
   | { readonly kind: 'rename-branch'; readonly oldName: string; readonly newName: string }
   | {

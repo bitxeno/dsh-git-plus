@@ -169,6 +169,11 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       if (action.oldName === action.newName) return { error: 'invalid-name', message: 'branch name unchanged' }
       return { argv: [['git', 'branch', '-m', '--end-of-options', action.oldName, action.newName]] }
     }
+    case 'reset-branch': {
+      if (!isSafeRev(action.ref)) return { error: 'invalid-name', message: `unsafe ref: ${action.ref}` }
+      const flag = action.mode === 'soft' ? '--soft' : action.mode === 'hard' ? '--hard' : '--mixed'
+      return { argv: [['git', 'reset', flag, '--end-of-options', action.ref]] }
+    }
     case 'create-tag': {
       if (!isSafeRev(action.name) || action.name.startsWith('/')) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
       if (action.ref !== undefined && action.ref !== '' && !isSafeRev(action.ref)) {
@@ -243,6 +248,11 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
     case 'rebase':
     case 'worktree-add':
       return { error: 'not-implemented', message: `${action.kind} is planned for V2` }
+    default:
+      // Unknown to this host (e.g. a newer client than the running host):
+      // answer with a typed error instead of falling off the switch, which
+      // would make runAction throw on `'error' in plan` and crash the view.
+      return { error: 'not-implemented', message: 'unknown action (restart dsh web to update the host)' }
   }
 }
 
