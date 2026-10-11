@@ -3,9 +3,9 @@
  * typechange) onto a CSS class that actually exists in styles.ts. */
 import type { GitChangeStatus } from './types'
 
-/** Single-letter badge for a status. */
+/** Single-letter badge for a status (untracked shows as added: new on disk). */
 export const statusChar: Record<string, string> = {
-  added: 'A', modified: 'M', deleted: 'D', renamed: 'R', untracked: 'U', conflicted: '!', typechange: 'T',
+  added: 'A', modified: 'M', deleted: 'D', renamed: 'R', untracked: 'A', conflicted: '!', typechange: 'T',
 }
 
 /** CSS class for a status badge; unmapped statuses fall back to modified. */
