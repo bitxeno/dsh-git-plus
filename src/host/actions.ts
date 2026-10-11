@@ -143,6 +143,12 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       }
       return { argv }
     }
+    case 'delete-remote-branch': {
+      if (!isSafeRev(action.remote)) return { error: 'invalid-name', message: `unsafe remote: ${action.remote}` }
+      const bad = safeBranch(action.branch)
+      if (bad) return bad
+      return { argv: [['git', 'push', '--delete', '--end-of-options', action.remote, action.branch]] }
+    }
     case 'rename-branch': {
       if (!isSafeBranchName(action.oldName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.oldName}` }
       if (!isSafeBranchName(action.newName)) return { error: 'invalid-name', message: `unsafe branch name: ${action.newName}` }

@@ -160,6 +160,10 @@ export type GitAction = {
     readonly force?: boolean; /** Also delete `<name>` on `<remote>` (`git push <remote> --delete`). */
     readonly remote?: string;
 } | {
+    readonly kind: 'delete-remote-branch';
+    readonly remote: string;
+    readonly branch: string;
+} | {
     readonly kind: 'rename-branch';
     readonly oldName: string;
     readonly newName: string;

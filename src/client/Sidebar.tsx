@@ -34,7 +34,7 @@ interface SidebarProps {
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
   readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push' | 'track', preset?: string, localNames?: readonly string[]) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
-  readonly onDeleteRef: (kind: 'branch' | 'tag', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean }) => void
+  readonly onDeleteRef: (kind: 'branch' | 'tag' | 'remote-branch', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean }) => void
   readonly onPushBranch: (branch: string, remote: string) => void
   readonly onPushTag: (tag: string, remote: string) => void
   readonly onRenameBranch: (oldName: string) => void
@@ -55,7 +55,9 @@ interface BranchTree {
 }
 
 const CLOSED_KEY = 'gp.plus.sidebar.closed'
-const FOLDER_CLOSED_KEY = 'gp.plus.sidebar.folders.closed'
+const FOLDER_OPEN_KEY = 'gp.plus.sidebar.folders.open'
+/** Previous closed-set key (default-expanded); kept for one-time cleanup. */
+const FOLDER_CLOSED_KEY_LEGACY = 'gp.plus.sidebar.folders.closed'
 const WIDTH_KEY = 'gp.plus.sidebar.width'
 
 /** Groups collapsed on first open; Branches stays expanded. */
@@ -71,9 +73,9 @@ function readClosed(): Set<string> {
   }
 }
 
-function readFolderClosed(): Set<string> {
+function readFolderOpen(): Set<string> {
   try {
-    const raw = localStorage.getItem(FOLDER_CLOSED_KEY)
+    const raw = localStorage.getItem(FOLDER_OPEN_KEY)
     if (!raw) return new Set()
     return new Set(JSON.parse(raw) as string[])
   } catch {
@@ -92,7 +94,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const [tree, setTree] = useState<BranchTree | null>(null)
   const [error, setError] = useState(false)
   const [closed, setClosed] = useState<ReadonlySet<string>>(readClosed)
-  const [folderClosed, setFolderClosed] = useState<ReadonlySet<string>>(readFolderClosed)
+  // Branch folders default to collapsed; only explicitly expanded paths are
+  // stored. (Legacy `folders.closed` defaulted to expanded and is ignored.)
+  const [folderOpen, setFolderOpen] = useState<ReadonlySet<string>>(readFolderOpen)
   const [menu, setMenu] = useState<RowMenu | null>(null)
   const [armedStashDrop, setArmedStashDrop] = useState<number | null>(null)
   // Manual list refresh (branches/tags/stashes re-query; picks up external
@@ -139,11 +143,14 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   }
 
   const toggleFolder = (path: string): void => {
-    setFolderClosed((prev) => {
+    setFolderOpen((prev) => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
       else next.add(path)
-      try { localStorage.setItem(FOLDER_CLOSED_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      try {
+        localStorage.setItem(FOLDER_OPEN_KEY, JSON.stringify([...next]))
+        localStorage.removeItem(FOLDER_CLOSED_KEY_LEGACY)
+      } catch { /* ignore */ }
       return next
     })
   }
@@ -208,7 +215,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const groupedRows = renderBranchNodes(branchNodes, {
     current: tree?.current ?? null,
     selection,
-    folderClosed,
+    folderOpen,
     onToggleFolder: toggleFolder,
     cbsFor: branchRowCbsFor,
   })
@@ -243,7 +250,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     t,
   })
   const remoteRows = renderRemoteNodes(remoteNodes, {
-    folderClosed,
+    folderOpen,
     onToggleFolder: toggleFolder,
     remoteUrls: tree?.remoteUrls ?? {},
     knownRemotes: tree?.remotes ?? [],
@@ -298,9 +305,6 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     ]
     : menu.kind === 'remote'
     ? [
-      // Push/rename/delete don't apply to remote-tracking refs (no local
-      // ref to push, rename or delete); checkout goes through the detached
-      // confirm flow like tags.
       { key: 'co', label: t('menu.checkoutRemote'), onSelect: () => onCheckoutRef(menu.name, '') },
       sep('s1'),
       {
@@ -318,6 +322,10 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       },
       sep('s3'),
       { key: 'cp', label: t('menu.copyBranchName'), onSelect: () => void copyText(menu.name) },
+      {
+        key: 'del', label: t('side.delete'), danger: true,
+        onSelect: () => onDeleteRef('remote-branch', (menu as { name: string }).name),
+      },
     ]
     : [
       { key: 'co', label: t('menu.checkoutTag'), onSelect: () => onCheckoutRef(menu.name, '') },
@@ -453,7 +461,7 @@ function renderBranchNodes(
   ctx: {
     readonly current: string | null
     readonly selection: SidebarSelection
-    readonly folderClosed: ReadonlySet<string>
+    readonly folderOpen: ReadonlySet<string>
     readonly onToggleFolder: (path: string) => void
     readonly cbsFor: (name: string) => BranchRowCbs
   },
@@ -466,7 +474,7 @@ function renderBranchNodes(
         depth: node.depth,
       }))
     } else {
-      const open = !ctx.folderClosed.has(node.path)
+      const open = ctx.folderOpen.has(node.path)
       out.push(h('div', {
         key: `f-${node.path}`,
         className: 'gp-branch-folder',
@@ -495,7 +503,7 @@ function renderBranchNodes(
 function renderRemoteNodes(
   nodes: readonly BranchTreeNode[],
   ctx: {
-    readonly folderClosed: ReadonlySet<string>
+    readonly folderOpen: ReadonlySet<string>
     readonly onToggleFolder: (key: string) => void
     readonly remoteUrls: Record<string, string>
     readonly knownRemotes: readonly string[]
@@ -516,7 +524,7 @@ function renderRemoteNodes(
       }))
     } else {
       const key = `remote/${node.path}`
-      const open = !ctx.folderClosed.has(key)
+      const open = ctx.folderOpen.has(key)
       const topRemote = node.depth === 0 ? node.path.split('/')[0] ?? '' : ''
       const known = topRemote !== '' && ctx.knownRemotes.includes(topRemote)
       const icon = node.depth === 0 && known

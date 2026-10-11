@@ -202,6 +202,19 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
           setModal({ kind: 'delete-branch', name, remote: opts?.remote ?? null, remoteIsGitHub: opts?.remoteIsGitHub ?? false })
           return
         }
+        if (kind === 'remote-branch') {
+          const slash = name.indexOf('/')
+          const remote = slash > 0 ? name.slice(0, slash) : ''
+          const branch = slash > 0 ? name.slice(slash + 1) : ''
+          if (remote === '' || branch === '') return
+          setModal({
+            kind: 'confirm',
+            title: t('modal.deleteRemoteBranchTitle'),
+            message: t('modal.deleteRemoteBranchConfirm', { remote, branch }),
+            action: { kind: 'delete-remote-branch', remote, branch },
+          })
+          return
+        }
         setModal({
           kind: 'confirm',
           title: t('modal.deleteTagTitle'),

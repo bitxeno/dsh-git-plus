@@ -7,7 +7,7 @@ import type { GitBranch } from './types'
 
 export interface BranchFolderNode {
   readonly kind: 'folder'
-  /** Full folder path, e.g. `feature` or `feature/sub`. Stable key for collapse state. */
+  /** Full folder path, e.g. `feature` or `feature/sub`. Stable key for expand/collapse state. */
   readonly path: string
   /** Last segment display name, e.g. `sub` for `feature/sub`. */
   readonly name: string
@@ -71,7 +71,8 @@ interface MutableFolder {
  * already belongs to — it is never pulled out of its folder. So `origin/main`
  * with `pinnedRef: 'origin/main'` stays inside the `origin` folder and leads
  * it (the row carries the "default" badge), which is how a remote's default
- * branch should read: the folder still owns the ref.
+ * branch should read: the folder still owns the ref. The pinned leaf leads
+ * even when sibling sub-folders exist (folders otherwise sort first).
  */
 export function buildBranchFolderTree(
   branches: readonly GitBranch[],
@@ -125,7 +126,14 @@ export function buildBranchFolderTree(
     depth: 0,
     ...(b.name === pinnedRef ? { isDefault: true } : {}),
   }))
-  // Folders first, then loose branches — both alphabetical.
+  // Folders first, then loose branches — both alphabetical — except the pinned
+  // default leaf, which leads the whole level (fixes `origin/main` style refs
+  // dropping behind folders when siblings contain `/`).
+  const pinnedRootIdx = leafNodes.findIndex((n) => n.isDefault === true)
+  if (pinnedRootIdx >= 0) {
+    const pinned = leafNodes[pinnedRootIdx]!
+    return [pinned, ...folderNodes, ...leafNodes.slice(0, pinnedRootIdx), ...leafNodes.slice(pinnedRootIdx + 1)]
+  }
   return [...folderNodes, ...leafNodes]
 }
 
@@ -172,12 +180,18 @@ function collapseFolder(f: MutableFolder, depth: number, pinnedRef: string | nul
     depth: depth + 1,
     ...(b.name === pinnedRef ? { isDefault: true } : {}),
   }))
+  // The pinned default leaf leads its siblings even when sub-folders exist;
+  // otherwise folders sort first, then leaves.
+  const pinnedIdx = leaves.findIndex((n) => n.isDefault === true)
+  const children: readonly BranchTreeNode[] = pinnedIdx >= 0
+    ? [leaves[pinnedIdx]!, ...subFolders, ...leaves.slice(0, pinnedIdx), ...leaves.slice(pinnedIdx + 1)]
+    : [...subFolders, ...leaves]
   return {
     kind: 'folder',
     path,
     name,
     depth,
-    children: [...subFolders, ...leaves],
+    children,
     count: countLeaves(f),
   }
 }
