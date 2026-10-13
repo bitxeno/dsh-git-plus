@@ -454,6 +454,26 @@ const CSS = `
 .gp-plus__backdrop{position:absolute;inset:0 0 0 46px;z-index:20;background:rgba(0,0,0,.32);opacity:0;pointer-events:none;transition:opacity .2s ease}
 .gp-plus__backdrop--on{opacity:1;pointer-events:auto}
 @media (prefers-reduced-motion: reduce){.gp-plus__backdrop{transition:none}}
+/* ---- narrow mode: single-column content (phone / thin window) ----
+ * The Changes/Files views sit side-by-side on desktop with a fixed-pixel left
+ * column (inline flex-basis from the resizable hook, e.g. 380px). On a phone
+ * that fixed width overflows the content pane and the outer overflow:hidden
+ * clips the row's trailing action buttons (half an eye icon). !important beats
+ * the hook's inline flex-basis.
+ * Changes stays list-only: the diff pane was entirely off-screen on a phone
+ * anyway, and stacking it (or the commit box) would steal half the height from
+ * the Unstaged/Staged groups. File viewing on touch stays available through
+ * the preview modal behind the eye button. */
+.gp-plus__body--narrow .gp-changes__left{flex:1 1 auto !important;min-width:0 !important;width:auto !important;max-width:none !important}
+.gp-plus__body--narrow .gp-changes > .gp-resizer{display:none}
+.gp-plus__body--narrow .gp-changes__right{display:none}
+.gp-plus__body--narrow .gp-file-row__actions,.gp-plus__body--narrow .gp-tdir__actions{visibility:visible}
+/* Files keeps list + preview stacked: tree rows carry no action buttons, and
+ * the stacked preview is the only way to see file content on a phone. */
+.gp-plus__body--narrow .gp-files{flex-direction:column}
+.gp-plus__body--narrow .gp-files__tree{flex:1 1 45% !important;min-width:0 !important;width:auto !important;max-width:none !important}
+.gp-plus__body--narrow .gp-files > .gp-resizer{display:none}
+.gp-plus__body--narrow .gp-files__preview{flex:1 1 55%;min-width:0;min-height:0;border-top:1px solid var(--dsw-alias-border-l2)}
 .gp-side{padding:8px;display:flex;flex-direction:column;gap:8px}
 /* Drawer-mode sidebar: a pinned header + view nav + sync toolbar, then a
  * scrolling group list (the .gp-side__body element owns that scroll). Column
