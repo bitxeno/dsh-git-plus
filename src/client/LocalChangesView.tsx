@@ -10,13 +10,13 @@ import type { DirEntry, GitAction, GitChange, GitSnapshot } from './types'
 import type { GitKey } from './locales'
 import { ChangeStats } from './ChangeStats'
 import { DiffView, diffSummary, type DiffMode } from './DiffView'
-import { ChevronIcon, EyeIcon, FolderIcon } from './icons'
+import { ChevronIcon, EyeIcon, FolderIcon, MoreIcon } from './icons'
 import { buildFileTree, type FileTreeNode } from './file-tree'
 import { Tip } from './Tip'
 import { statusChar, statusClass } from './status'
 import { useResizableColumn, useResizableRow } from './resizable'
 import { segButtons } from './seg'
-import { ContextMenu, type MenuItem } from './ContextMenu'
+import { ContextMenu, menuAnchorAt, type MenuItem } from './ContextMenu'
 import { ignorePatternForDir, ignorePatternsForFile } from './ignore-pattern'
 
 interface ChangesTabProps {
@@ -373,6 +373,17 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
                   },
                 }, '↺'),
               }),
+              h(Tip, {
+                key: 'more', label: t('menu.more'),
+                children: h('button', {
+                  type: 'button', className: 'gp-icon-btn gp-more-btn', 'aria-label': t('menu.more'),
+                  onClick: (e: Event) => {
+                    e.stopPropagation()
+                    const p = menuAnchorAt(e)
+                    setMenu({ x: p.x, y: p.y, target: { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) } })
+                  },
+                }, h(MoreIcon, { size: 15 })),
+              }),
             ]),
           ]))
         if (open) out.push(...renderTree(node.children, depth + 1, stagedSide))
@@ -588,6 +599,13 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
       h(Tip, {
         key: 'dis', label: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'),
         children: h('button', { type: 'button', className: 'gp-icon-btn', style: a.armed ? { color: 'var(--dsw-alias-state-error-primary)' } : {}, disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onDiscard() } }, '↺'),
+      }),
+      h(Tip, {
+        key: 'more', label: a.t('menu.more'),
+        children: h('button', {
+          type: 'button', className: 'gp-icon-btn gp-more-btn', 'aria-label': a.t('menu.more'),
+          onClick: (e: Event) => { e.stopPropagation(); const p = menuAnchorAt(e); a.onMenu(p.x, p.y) },
+        }, h(MoreIcon, { size: 15 })),
       }),
     ]),
   ])

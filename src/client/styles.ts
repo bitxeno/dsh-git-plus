@@ -474,6 +474,16 @@ const CSS = `
 .gp-plus__body--narrow .gp-files__tree{flex:1 1 45% !important;min-width:0 !important;width:auto !important;max-width:none !important}
 .gp-plus__body--narrow .gp-files > .gp-resizer{display:none}
 .gp-plus__body--narrow .gp-files__preview{flex:1 1 55%;min-width:0;min-height:0;border-top:1px solid var(--dsw-alias-border-l2)}
+/* "..." touch entry to row menus: hidden (and unfocusable) on desktop where
+ * right-click owns menus; shown in narrow mode, where touch has neither hover
+ * nor right-click to reach row actions with. */
+.gp-more-btn{display:none}
+.gp-row-more{display:none}
+.gp-plus__body--narrow .gp-more-btn{display:inline-flex}
+.gp-plus__body--narrow .gp-row-more{display:inline-flex}
+/* Group-head quick actions (e.g. refresh) are hover-only on desktop; touch
+ * needs them always visible. */
+.gp-plus__body--narrow .gp-side__hact{opacity:1}
 .gp-side{padding:8px;display:flex;flex-direction:column;gap:8px}
 /* Drawer-mode sidebar: a pinned header + view nav + sync toolbar, then a
  * scrolling group list (the .gp-side__body element owns that scroll). Column

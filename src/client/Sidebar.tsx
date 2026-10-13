@@ -18,8 +18,8 @@ import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, PanelLeftIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
-import { ContextMenu, copyText, type MenuItem } from './ContextMenu'
+import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, MoreIcon, PanelLeftIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
+import { ContextMenu, copyText, menuAnchorAt, type MenuItem } from './ContextMenu'
 import { Tip } from './Tip'
 import { isGitHubRemote } from './avatar'
 import { buildBranchFolderTree, expandGroup, splitDefaultBranch, type BranchTreeNode } from './branch-groups'
@@ -296,6 +296,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onSelect,
     onCheckout: () => onCheckoutRef(b.name, ''),
     onMenu: (x, y) => setMenu({ x, y, kind: 'tag', name: b.name }),
+    t,
   }))
   const stashRows = stashes.map((s) => renderStashRow(s, t, run, armedStashDrop === s.index, {
     onArm: () => setArmedStashDrop(s.index),
@@ -329,6 +330,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     knownRemotes: tree?.remotes ?? [],
     selection,
     leafCbsFor: remoteLeafCbsFor,
+    t,
   })
   const sep = (key: string): MenuItem => ({ key, separator: true })
   const menuItems: readonly MenuItem[] = menu === null ? [] : menu.kind === 'stash-create'
@@ -526,6 +528,21 @@ interface BranchRowCbs {
   readonly t: SidebarProps['t']
 }
 
+/**
+ * Touch entry to the row's right-click menu: CSS keeps it hidden on desktop
+ * (right-click owns menus there) and shows it in narrow mode, where there is
+ * no hover or right-click to reveal row actions with.
+ */
+function moreButton(label: string, onOpen: (x: number, y: number) => void): JSX.Element {
+  return h('span', { key: 'more', className: 'gp-row-more' }, h(Tip, {
+    label,
+    children: h('button', {
+      type: 'button', className: 'gp-icon-btn gp-more-btn', 'aria-label': label,
+      onClick: (e: Event) => { e.stopPropagation(); const p = menuAnchorAt(e); onOpen(p.x, p.y) },
+    }, h(MoreIcon, { size: 15 })),
+  }))
+}
+
 function renderBranchRow(
   b: GitBranch,
   current: string | null,
@@ -559,6 +576,7 @@ function renderBranchRow(
     h('span', { key: 'n', className: 'gp-tree-name' }, displayName),
     isDefault ? h('span', { key: 'd', className: 'gp-branch-row__default' }, cb.t('side.default')) : null,
     (b.ahead || b.behind) ? h('span', { key: 't', className: 'gp-branch-row__track' }, `${b.ahead ? `↑${b.ahead}` : ''}${b.behind ? `↓${b.behind}` : ''}`) : null,
+    moreButton(cb.t('menu.more'), cb.onMenu),
   ])
 }
 
@@ -616,6 +634,7 @@ function renderRemoteNodes(
     readonly knownRemotes: readonly string[]
     readonly selection: SidebarSelection
     readonly leafCbsFor: (name: string) => BranchRowCbs
+    readonly t: SidebarProps['t']
   },
 ): JSX.Element[] {
   const out: JSX.Element[] = []
@@ -660,6 +679,7 @@ function renderRemoteNodes(
         h('span', { key: 'i', className: 'gp-row-icon gp-branch-folder__icon' }, icon),
         h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
         h('span', { key: 'cnt', className: 'gp-branch-row__track' }, String(node.count)),
+        node.depth === 0 && known ? moreButton(ctx.t('menu.more'), (x, y) => ctx.onFolderMenu(topRemote, x, y)) : null,
       ]))
       if (open) out.push(...renderRemoteNodes(node.children, ctx))
     }
@@ -671,6 +691,7 @@ interface TagRowCbs {
   readonly onSelect: SidebarProps['onSelect']
   readonly onCheckout: () => void
   readonly onMenu: (x: number, y: number) => void
+  readonly t: SidebarProps['t']
 }
 
 function renderTagRow(b: GitBranch, isActive: boolean, cb: TagRowCbs): JSX.Element {
@@ -682,6 +703,7 @@ function renderTagRow(b: GitBranch, isActive: boolean, cb: TagRowCbs): JSX.Eleme
   }, [
     h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
     h('span', { key: 'n', className: 'gp-tree-name' }, b.name),
+    moreButton(cb.t('menu.more'), cb.onMenu),
   ])
 }
 

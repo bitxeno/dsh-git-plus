@@ -106,6 +106,15 @@ export function EyeIcon({ size }: IconProps): JSX.Element {
   return svg([h('path', { key: 'a', d: 'M2 8s2.6-4.2 6-4.2S14 8 14 8s-2.6 4.2-6 4.2S2 8 2 8z' }), h('circle', { key: 'b', cx: 8, cy: 8, r: 1.6 })], size)
 }
 
+/** More actions: three horizontal dots (touch-friendly menu entry). */
+export function MoreIcon({ size }: IconProps): JSX.Element {
+  return svg([
+    h('circle', { key: 'a', cx: 3, cy: 8, r: 1.3, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { key: 'b', cx: 8, cy: 8, r: 1.3, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { key: 'c', cx: 13, cy: 8, r: 1.3, fill: 'currentColor', stroke: 'none' }),
+  ], size)
+}
+
 /** GitHub mark (filled, currentColor). */
 export function GitHubIcon({ size = 15 }: IconProps): JSX.Element {
   return h('svg', { width: size, height: size, viewBox: '0 0 16 16', fill: 'currentColor' },

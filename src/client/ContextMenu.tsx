@@ -58,6 +58,18 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps): JSX.Ele
   )
 }
 
+/**
+ * Anchor a context menu at the clicked "..." button (touch has no cursor
+ * position). The menu clamps itself to the viewport, so the button's
+ * bottom-left is always a safe anchor.
+ */
+export function menuAnchorAt(e: { currentTarget: unknown }): { x: number; y: number } {
+  const el = e.currentTarget as Element | null
+  if (el === null || typeof el.getBoundingClientRect !== 'function') return { x: 0, y: 0 }
+  const r = el.getBoundingClientRect()
+  return { x: r.left, y: r.bottom }
+}
+
 /** Best-effort clipboard copy with a legacy fallback. */
 export async function copyText(text: string): Promise<boolean> {
   try {
