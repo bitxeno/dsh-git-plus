@@ -361,7 +361,9 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
             h('span', { key: 'i', className: 'gp-folder' }, h(FolderIcon, { size: 14 })),
             h('span', { key: 'n', className: 'gp-tree-name' }, node.name),
             h('span', { key: 'act', className: 'gp-tdir__actions' }, [
-              h(Tip, {
+              // Staged dirs have nothing to discard: `git restore` operates on
+              // the worktree, not the index (see the file-row note).
+              stagedSide ? null : h(Tip, {
                 key: 'dis', label: dirArmed ? t('changes.discardConfirm') : t('changes.discard'),
                 children: h('button', {
                   type: 'button', className: 'gp-icon-btn',
@@ -597,7 +599,9 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
         key: 'view', label: a.t('menu.view'),
         children: h('button', { type: 'button', className: 'gp-icon-btn', onClick: (e: Event) => { e.stopPropagation(); a.onPreview() } }, h(EyeIcon, { size: 14 })),
       }),
-      h(Tip, {
+      // Staged rows drop the discard action: `git restore` cannot target the
+      // index, so a staged file must be unstaged before its changes go.
+      c.staged ? null : h(Tip, {
         key: 'dis', label: a.armed ? a.t('changes.discardConfirm') : a.t('changes.discard'),
         children: h('button', { type: 'button', className: 'gp-icon-btn', style: a.armed ? { color: 'var(--dsw-alias-state-error-primary)' } : {}, disabled: a.busy, onClick: (e: Event) => { e.stopPropagation(); a.onDiscard() } }, '↺'),
       }),
@@ -691,12 +695,16 @@ function buildChangeMenuItems(target: ChangeMenuTarget, cb: ChangeMenuCbs): Menu
     ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern }), onSelect: () => cb.ignore([pattern]) })
   }
   if (ignoreItems.length > 0) sections.push(ignoreItems)
-  sections.push([{
-    key: 'discard',
-    label: n === 1 ? cb.t('changes.discard') : cb.t('menu.discardFiles', { n }),
-    danger: true,
-    onSelect: () => cb.discard(paths, n),
-  }])
+  // Staged targets cannot be discarded directly (`git restore` clears the
+  // worktree, not the index): the action only appears for unstaged content.
+  if (!stagedSide) {
+    sections.push([{
+      key: 'discard',
+      label: n === 1 ? cb.t('changes.discard') : cb.t('menu.discardFiles', { n }),
+      danger: true,
+      onSelect: () => cb.discard(paths, n),
+    }])
+  }
   const items: MenuItem[] = []
   sections.forEach((section, i) => {
     if (i > 0) items.push(sep(`s${i}`))
