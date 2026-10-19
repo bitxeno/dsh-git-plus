@@ -27,6 +27,7 @@ import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
 import { CherryPickModal } from './modals/CherryPick'
 import { RevertModal } from './modals/Revert'
+import { CreatePatchModal } from './modals/CreatePatch'
 import { EditRemoteModal } from './modals/EditRemote'
 import { ResetBranchModal } from './modals/ResetBranch'
 import { DeleteBranchModal } from './modals/DeleteBranch'
@@ -55,6 +56,7 @@ type ModalState =
   | { kind: 'reset'; ref: string; shortHash: string; branch: string; subject: string }
   | { kind: 'cherry-pick'; ref: string; shortHash: string; subject: string }
   | { kind: 'revert'; ref: string; shortHash: string; subject: string }
+  | { kind: 'create-patch'; ref: string; shortHash: string; subject: string }
   | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
   | { kind: 'edit-remote'; name: string; url: string }
   | { kind: 'track'; remote: string; localNames: readonly string[] }
@@ -218,6 +220,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         },
         onCherryPickAt: (hash, shortHash, subject) => setModal({ kind: 'cherry-pick', ref: hash, shortHash, subject }),
         onRevertAt: (hash, shortHash, subject) => setModal({ kind: 'revert', ref: hash, shortHash, subject }),
+        onCreatePatchAt: (hash, shortHash, subject) => setModal({ kind: 'create-patch', ref: hash, shortHash, subject }),
       })) : null,
     ])
   })()
@@ -361,6 +364,7 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
   if (modal.kind === 'reset') return h(ResetBranchModal, { t: ctx.t, branch: modal.branch, refName: modal.ref, shortHash: modal.shortHash, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'cherry-pick') return h(CherryPickModal, { t: ctx.t, refName: modal.ref, shortHash: modal.shortHash, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'revert') return h(RevertModal, { t: ctx.t, remote: ctx.remote, sessionId: ctx.sessionId, refName: modal.ref, shortHash: modal.shortHash, subject: modal.subject, onClose: ctx.onClose, onSubmit: ctx.onAction })
+  if (modal.kind === 'create-patch') return h(CreatePatchModal, { t: ctx.t, remote: ctx.remote, sessionId: ctx.sessionId, refName: modal.ref, shortHash: modal.shortHash, subject: modal.subject, onClose: ctx.onClose })
   if (modal.kind === 'delete-branch') return h(DeleteBranchModal, { t: ctx.t, branchName: modal.name, remote: modal.remote, remoteIsGitHub: modal.remoteIsGitHub, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'track') {
     const segs = modal.remote.split('/')

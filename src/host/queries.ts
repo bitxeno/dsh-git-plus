@@ -64,6 +64,7 @@ export async function runQuery(
       case 'remote-url': return await queryRemoteUrl(deps, root)
       case 'remote-test': return await queryRemoteTest(deps, root, q)
       case 'patch': return await queryPatch(deps, root, q)
+      case 'commit-patch': return await queryCommitPatch(deps, root, q)
       case 'quick-status': return await queryQuickStatus(deps, root)
       case 'host-platform': return { ok: true, value: { kind: 'host-platform', platform: process.platform } }
       case 'github-avatars': return await queryGithubAvatars(deps, root, q)
@@ -695,6 +696,30 @@ async function queryRevertConflicts(
     return { ok: true, value: { kind: 'revert-conflicts', available: true, hasConflict: true, files } }
   }
   return unknown
+}
+
+/**
+ * Unified patch for one commit via `git format-patch -1 --stdout`: the
+ * mail-formatted diff (`From <sha> …` header + body) that `git am` consumes.
+ * Bounded like the working-tree patch export so a huge commit cannot flood
+ * the RPC response.
+ */
+async function queryCommitPatch(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'commit-patch' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafeRev(q.ref)) return { ok: false, error: { code: 'invalid-name', message: `unsafe ref: ${q.ref}` } }
+  const res = await runCommand(deps.run, ['git', 'format-patch', '-1', '--stdout', '--end-of-options', q.ref], root, 'commit-patch', deps.signal)
+  if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (res.run.exitCode !== 0) {
+    return { ok: false, error: { code: 'git-error', message: res.run.stderr.trim() || `git exited ${res.run.exitCode}` } }
+  }
+  const text = res.run.stdout
+  const truncated = text.length > MAX_PATCH_BYTES
+  return { ok: true, value: { kind: 'commit-patch', text: truncated ? text.slice(0, MAX_PATCH_BYTES) : text, truncated } }
 }
 
 /**

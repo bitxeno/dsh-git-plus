@@ -248,6 +248,7 @@ export type GitQuery =
   | { readonly kind: 'remote-url' }
   | { readonly kind: 'remote-test'; readonly url: string }
   | { readonly kind: 'patch'; readonly paths: readonly string[] }
+  | { readonly kind: 'commit-patch'; readonly ref: string }
   | { readonly kind: 'quick-status' }
   | { readonly kind: 'host-platform' }
   | { readonly kind: 'github-avatars'; readonly owner: string; readonly repo: string }
@@ -345,6 +346,7 @@ export type GitQueryResult =
   | { readonly kind: 'remote-url'; readonly url: string }
   | { readonly kind: 'remote-test'; readonly reachable: boolean; readonly message?: string }
   | { readonly kind: 'patch'; readonly text: string; readonly truncated: boolean }
+  | { readonly kind: 'commit-patch'; readonly text: string; readonly truncated: boolean }
   | {
     readonly kind: 'github-avatars'
     readonly avatars: readonly { readonly sha: string; readonly url: string }[]

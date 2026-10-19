@@ -339,6 +339,9 @@ export type GitQuery = {
     readonly kind: 'patch';
     readonly paths: readonly string[];
 } | {
+    readonly kind: 'commit-patch';
+    readonly ref: string;
+} | {
     readonly kind: 'quick-status';
 } | {
     readonly kind: 'host-platform';
@@ -472,6 +475,10 @@ export type GitQueryResult = {
     readonly message?: string;
 } | {
     readonly kind: 'patch';
+    readonly text: string;
+    readonly truncated: boolean;
+} | {
+    readonly kind: 'commit-patch';
     readonly text: string;
     readonly truncated: boolean;
 } | {
