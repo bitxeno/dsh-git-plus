@@ -39,8 +39,11 @@ export function ModalFooter(props: {
   readonly disabled?: boolean
   /** Confirm-button label; the generic confirm key when absent. */
   readonly confirmLabel?: string
+  /** Content pinned to the left of the buttons (e.g. a conflict-status hint). */
+  readonly leading?: JSX.Element
 }): JSX.Element {
   return h('div', { className: 'gp-dialog__foot' }, [
+    props.leading !== undefined ? h('div', { key: 'l', className: 'gp-foot__leading' }, props.leading) : null,
     h('button', { key: 'c', type: 'button', className: 'gp-btn', onClick: props.onClose }, props.t('modal.cancel')),
     h('button', {
       key: 'ok', type: 'button', className: 'gp-btn gp-btn--primary',

@@ -4,6 +4,7 @@
  * TypeScript loader. Not part of the plugin runtime.
  */
 export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashList, parseTags, markRemotePresence, parseBranchHeader, sumNumstat, parseRefs, stripRefNamespace, parseRemoteUrls, parseAuthors } from '../host/parser.ts'
+export { parseMergeTreeConflicts } from '../host/queries.ts'
 export { extractRepoAvatars, isGhPathName } from '../host/github.ts'
 export { isSafePath, isSafeRev, isSafeBranchName, isSafeRemoteName, isSafeRemoteUrl, isSafeIgnorePattern } from '../host/validate.ts'
 export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked, isEmptyCherryPick } from '../host/actions.ts'

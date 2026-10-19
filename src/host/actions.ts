@@ -182,6 +182,15 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       args.push('--end-of-options', action.ref)
       return { argv: [args] }
     }
+    case 'revert': {
+      if (!isSafeRev(action.ref)) return { error: 'invalid-name', message: `unsafe ref: ${action.ref}` }
+      // --no-edit keeps the non-interactive run from launching an editor when
+      // it makes the revert commit (it is ignored alongside --no-commit).
+      const args = ['git', 'revert', '--no-edit']
+      if (action.noCommit === true) args.push('--no-commit')
+      args.push('--end-of-options', action.ref)
+      return { argv: [args] }
+    }
     case 'create-tag': {
       if (!isSafeRev(action.name) || action.name.startsWith('/')) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
       if (action.ref !== undefined && action.ref !== '' && !isSafeRev(action.ref)) {
@@ -400,7 +409,7 @@ export async function runAction(
       // list so the client can jump straight to the conflict banner.
       // Cherry-pick lands in the same flow: its continue/abort already dispatches
       // on the live operation kind (planContinueAbort).
-      if (request.action.kind === 'merge' || request.action.kind === 'pull' || request.action.kind === 'cherry-pick' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
+      if (request.action.kind === 'merge' || request.action.kind === 'pull' || request.action.kind === 'cherry-pick' || request.action.kind === 'revert' || request.action.kind === 'stash-apply' || request.action.kind === 'stash-pop') {
         const files = await readConflictFiles(deps, root)
         // Empty cherry-pick (change already applied): git exits 1 saying the
         // pick "is now empty, possibly due to conflict resolution" and leaves

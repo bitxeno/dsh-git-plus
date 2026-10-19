@@ -540,6 +540,11 @@ const CSS = `
 .gp-dialog__x:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .gp-dialog__body{padding:0 24px;display:flex;flex-direction:column;gap:12px}
 .gp-dialog__foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:20px 24px 24px}
+/* Left-pinned footer hint (revert conflict status); pushes the buttons right. */
+.gp-foot__leading{margin-right:auto;min-width:0}
+.gp-revert-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.gp-revert-status--ok{color:var(--dsw-alias-state-success-primary)}
+.gp-revert-status--warn{color:var(--dsw-alias-state-error-primary)}
 /* Wide dialog variant for content previews (default 380px fits forms). */
 .gp-dialog--wide{width:min(720px,100%)}
 /* File preview modal: fixed-height body so switching views (render / source /

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir, parseMergeTreeConflicts } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -71,6 +71,30 @@ describe('planAction git-plus', () => {
     assert.ok('argv' in full)
     assert.deepEqual(full.argv, [['git', 'cherry-pick', '--no-commit', '-x', '--end-of-options', 'abc1234']])
     assert.ok('error' in planAction({ kind: 'cherry-pick', ref: '-evil' }, false))
+  })
+  it('plans revert with and without --no-commit', () => {
+    const plain = planAction({ kind: 'revert', ref: 'abc1234' }, false)
+    assert.ok('argv' in plain)
+    assert.deepEqual(plain.argv, [['git', 'revert', '--no-edit', '--end-of-options', 'abc1234']])
+    const staged = planAction({ kind: 'revert', ref: 'abc1234', noCommit: true }, false)
+    assert.ok('argv' in staged)
+    assert.deepEqual(staged.argv, [['git', 'revert', '--no-edit', '--no-commit', '--end-of-options', 'abc1234']])
+    assert.ok('error' in planAction({ kind: 'revert', ref: '-evil' }, false))
+  })
+  it('parses conflicted paths from merge-tree --write-tree output', () => {
+    const out = [
+      '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+      '100644 1111111111111111111111111111111111111111 1\tsrc/a.ts',
+      '100644 2222222222222222222222222222222222222222 3\tsrc/a.ts',
+      '100644 3333333333333333333333333333333333333333 2\tsrc/b.ts',
+      '',
+      'CONFLICT (content): Merge conflict in src/a.ts',
+      'Auto-merging src/c.ts',
+    ].join('\n')
+    assert.deepEqual(parseMergeTreeConflicts(out), ['src/a.ts', 'src/b.ts'])
+    // Clean merge: just the tree OID, no file-info section.
+    assert.deepEqual(parseMergeTreeConflicts('4b825dc642cb6eb9a060e54bf8d69288fbee4904\n'), [])
+    assert.deepEqual(parseMergeTreeConflicts(''), [])
   })
   it('spots an empty cherry-pick (already applied) vs a real conflict', () => {
     const emptyOut = 'The previous cherry-pick is now empty, possibly due to conflict resolution.\nOtherwise, please use \'git cherry-pick --skip\'\nnothing to commit, working tree clean'

@@ -60,6 +60,7 @@ export async function runQuery(
       case 'stash-list': return await queryStashList(deps, root)
       case 'conflicts': return await queryConflicts(deps, root)
       case 'operation-state': return await queryOperationState(deps, root)
+      case 'revert-conflicts': return await queryRevertConflicts(deps, root, q)
       case 'remote-url': return await queryRemoteUrl(deps, root)
       case 'remote-test': return await queryRemoteTest(deps, root, q)
       case 'patch': return await queryPatch(deps, root, q)
@@ -654,6 +655,68 @@ async function queryConflicts(deps: SnapshotDeps, root: string): Promise<GitQuer
 async function queryOperationState(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
   const operation = await detectOperation(deps, root)
   return { ok: true, value: { kind: 'operation-state', operation } }
+}
+
+/**
+ * Forecast whether reverting `ref` applies cleanly. `git revert` is a
+ * three-way merge of HEAD with `<ref>^` using `<ref>` as the base, so we
+ * simulate exactly that with `merge-tree --write-tree --merge-base=<ref>`
+ * (git ≥ 2.38) and read the conflicted index entries from its output.
+ * Best-effort: an unsupported git, a missing parent (root commit) or any
+ * transient failure answers `available: false`, and the dialog hides the
+ * status instead of guessing.
+ */
+async function queryRevertConflicts(
+  deps: SnapshotDeps,
+  root: string,
+  q: Extract<GitQueryRequest['query'], { kind: 'revert-conflicts' }>,
+): Promise<GitQueryResponse> {
+  if (!isSafeRev(q.ref)) return { ok: false, error: { code: 'invalid-name', message: `unsafe ref: ${q.ref}` } }
+  const unknown = { ok: true as const, value: { kind: 'revert-conflicts' as const, available: false, hasConflict: false, files: [] as string[] } }
+  const parentRes = await runCommand(deps.run, ['git', 'rev-parse', '--verify', '--quiet', `${q.ref}^`], root, 'revert-parent', deps.signal)
+  if (!('run' in parentRes)) return unknown
+  if (parentRes.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (parentRes.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  if (parentRes.run.exitCode !== 0) return unknown
+  const parent = parentRes.run.stdout.trim()
+  if (parent === '') return unknown
+  const res = await runCommand(deps.run, ['git', 'merge-tree', '--write-tree', `--merge-base=${q.ref}`, 'HEAD', parent], root, 'revert-predict', deps.signal)
+  if (!('run' in res)) return unknown
+  if (res.run.cancelled) return { ok: false, error: { code: 'cancelled' } }
+  if (res.run.timedOut) return { ok: false, error: { code: 'timeout' } }
+  const { stdout, stderr, exitCode } = res.run
+  if (exitCode === 0) return { ok: true, value: { kind: 'revert-conflicts', available: true, hasConflict: false, files: [] } }
+  // Old git (no --write-tree / --merge-base): not knowable, not a conflict.
+  if (/unknown option|unrecognized argument|usage:/i.test(stderr)) return unknown
+  const files = parseMergeTreeConflicts(stdout)
+  // merge-tree exits 1 on a real conflict, ~128 on an error (bad ref / missing
+  // object); only the former is a prediction.
+  if (exitCode === 1 && (files.length > 0 || stdout.includes('CONFLICT'))) {
+    return { ok: true, value: { kind: 'revert-conflicts', available: true, hasConflict: true, files } }
+  }
+  return unknown
+}
+
+/**
+ * Conflicted paths from `git merge-tree --write-tree` output. The header tree
+ * OID is followed by one `<mode> <oid> <stage>\t<path>` line per conflicted
+ * index entry, terminated by a blank line; the prose "CONFLICT (...)" section
+ * after it is unreliable (wording varies by conflict type), so we read the
+ * structured entries only. Pure so the parsing stays unit-testable.
+ */
+export function parseMergeTreeConflicts(stdout: string): string[] {
+  const files: string[] = []
+  const seen = new Set<string>()
+  const lines = stdout.split('\n')
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === '') break
+    const m = (lines[i] ?? '').match(/^[0-7]{6} [0-9a-f]+ [1-3]\t(.+)$/)
+    if (m !== null && m[1] !== undefined && !seen.has(m[1])) {
+      seen.add(m[1])
+      files.push(m[1])
+    }
+  }
+  return files
 }
 
 async function queryRemoteUrl(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {

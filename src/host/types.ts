@@ -157,6 +157,7 @@ export type GitAction =
   | { readonly kind: 'delete-remote-branch'; readonly remote: string; readonly branch: string }
   | { readonly kind: 'reset-branch'; readonly ref: string; readonly mode: 'soft' | 'mixed' | 'hard' }
   | { readonly kind: 'cherry-pick'; readonly ref: string; /** Leave the changes staged without committing (`-n`). */ readonly noCommit?: boolean; /** Record the source in the message (`-x`). */ readonly recordOrigin?: boolean }
+  | { readonly kind: 'revert'; readonly ref: string; /** Leave the changes staged without committing (`-n`). */ readonly noCommit?: boolean }
   | { readonly kind: 'edit-remote'; readonly oldName: string; readonly newName: string; readonly url: string }
   | { readonly kind: 'rename-branch'; readonly oldName: string; readonly newName: string }
   | {
@@ -243,6 +244,7 @@ export type GitQuery =
   | { readonly kind: 'stash-list' }
   | { readonly kind: 'conflicts' }
   | { readonly kind: 'operation-state' }
+  | { readonly kind: 'revert-conflicts'; readonly ref: string }
   | { readonly kind: 'remote-url' }
   | { readonly kind: 'remote-test'; readonly url: string }
   | { readonly kind: 'patch'; readonly paths: readonly string[] }
@@ -333,6 +335,13 @@ export type GitQueryResult =
   | { readonly kind: 'stash-list'; readonly stashes: readonly StashEntry[] }
   | { readonly kind: 'conflicts'; readonly files: readonly string[] }
   | { readonly kind: 'operation-state'; readonly operation: GitOperationState | null }
+  | {
+    readonly kind: 'revert-conflicts'
+    /** False when the running git lacks `merge-tree --write-tree` / `--merge-base` (or the probe failed), so the caller hides the status. */
+    readonly available: boolean
+    readonly hasConflict: boolean
+    readonly files: readonly string[]
+  }
   | { readonly kind: 'remote-url'; readonly url: string }
   | { readonly kind: 'remote-test'; readonly reachable: boolean; readonly message?: string }
   | { readonly kind: 'patch'; readonly text: string; readonly truncated: boolean }
