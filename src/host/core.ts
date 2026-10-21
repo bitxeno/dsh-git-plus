@@ -249,7 +249,7 @@ export async function snapshotForSession(
     runCommand(deps.run, ['git', 'diff', '--numstat'], root, 'numstat-worktree', deps.signal),
     runCommand(deps.run, ['git', 'diff', '--numstat', '--cached'], root, 'numstat-staged', deps.signal),
     runCommand(deps.run, ['git', 'diff', '--name-only', '--diff-filter=U'], root, 'conflicts', deps.signal),
-    runCommand(deps.run, ['git', 'stash', 'list', '--format=%gd%00%gs%00%aI%00%P%00%H'], root, 'stash-list', deps.signal),
+    runCommand(deps.run, ['git', 'stash', 'list', '--format=%gd%x00%gs%x00%aI%x00%P%x00%H'], root, 'stash-list', deps.signal),
     runCommand(deps.run, ['git', 'rev-parse', '--absolute-git-dir'], root, 'git-dir', deps.signal),
   ])
 

@@ -632,7 +632,7 @@ async function queryWorktreeStats(
 async function queryStashList(deps: SnapshotDeps, root: string): Promise<GitQueryResponse> {
   const res = await runCommand(
     deps.run,
-    ['git', 'stash', 'list', '--format=%gd%00%gs%00%aI%00%P%00%H'],
+    ['git', 'stash', 'list', '--format=%gd%x00%gs%x00%aI%x00%P%x00%H'],
     root, 'stash-list', deps.signal,
   )
   if (!('run' in res)) return { ok: false, error: { code: 'git-unavailable' } }
