@@ -520,10 +520,6 @@ const CSS = `
 .gp-side__cur{font-size:10px;color:var(--dsw-alias-state-success-primary,#3fb950)}
 .gp-side__ahead{font-size:10px;color:var(--dsw-alias-state-success-primary)}
 .gp-side__behind{font-size:10px;color:var(--dsw-alias-state-warn-primary)}
-.gp-side__ops{display:flex;gap:2px}
-.gp-side__ops button{padding:2px 5px;border-radius:6px;color:var(--dsw-alias-label-tertiary)}
-.gp-side__ops button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.gp-side__danger{color:var(--dsw-alias-state-error-primary) !important}
 .gp-side__error{color:var(--dsw-alias-state-error-primary);font-size:12px}
 .gp-conflict{margin:8px;padding:10px 12px;border:1px solid var(--dsw-alias-state-error-primary);border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent)}
 .gp-conflict__head{font-weight:700;color:var(--dsw-alias-state-error-primary)}
@@ -586,6 +582,12 @@ const CSS = `
 .gp-delbranch{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-primary)}
 .gp-delbranch__icon{display:inline-flex;flex:none;color:var(--dsw-alias-label-tertiary)}
 .gp-delbranch__name{font-family:var(--dsw-font-mono,ui-monospace,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* apply-stash dialog: target row (label + stash icon + "stash@{n} message")
+ * and the muted note under the "delete after applying" checkbox. */
+.gp-stash{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-primary);min-width:0}
+.gp-stash__label{flex:none;color:var(--dsw-alias-label-secondary)}
+.gp-stash__name{font-family:var(--dsw-font-mono,ui-monospace,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp-stash__hint{padding-left:24px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
 .gp-radio{display:flex;flex-direction:column;gap:8px}
 .gp-btn--primary{background:var(--dsw-alias-state-business-primary,#5ac8fa);color:#fff;border-radius:8px;padding:6px 14px}
 .gp-rail{display:flex;flex-direction:column;overflow:auto}

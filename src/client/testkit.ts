@@ -7,7 +7,7 @@ export { parseStatus, parseGraphLog, parseBranches, parseNameStatus, parseStashL
 export { parseMergeTreeConflicts } from '../host/queries.ts'
 export { extractRepoAvatars, isGhPathName } from '../host/github.ts'
 export { isSafePath, isSafeRev, isSafeBranchName, isSafeRemoteName, isSafeRemoteUrl, isSafeIgnorePattern } from '../host/validate.ts'
-export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked, isEmptyCherryPick } from '../host/actions.ts'
+export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked, isEmptyCherryPick, renameStashReflogEntry, stashReflogMessage } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
 export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch, expandGroup } from './branch-groups.ts'

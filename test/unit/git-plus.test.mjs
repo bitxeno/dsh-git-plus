@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir, parseMergeTreeConflicts } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, renameStashReflogEntry, stashReflogMessage, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir, parseMergeTreeConflicts } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -395,5 +395,55 @@ describe('parseBranches / markRemotePresence', () => {
     assert.equal(markRemotePresence(local, [], [])[0].onRemote, undefined)
     const remote = parseBranches(`origin/main${N}a1${N}${N}${N}`)
     assert.equal(markRemotePresence(local, remote, [])[0].onRemote, undefined)
+  })
+})
+
+describe('stash reflog rename', () => {
+  // Real `git stash` reflog: oldest first, newest last, so stash@{0} is the
+  // final line. Ident field: name <email> ts tz, then TAB, then the message.
+  const reflog = [
+    '0000000000000000000000000000000000000000 abc111 a <a@b> 1792565847 +0800\tOn master: first message',
+    'abc111 def222 a <a@b> 1792565876 +0800\tOn master: second message',
+    'def222 aaa333 a <a@b> 1792565899 +0800\tOn master: third message',
+    '',
+  ].join('\n')
+
+  it('rewrites the newest entry (stash@{0})', () => {
+    const out = renameStashReflogEntry(reflog, 0, 'renamed')
+    assert.equal(stashReflogMessage(out, 0), 'renamed')
+    assert.equal(stashReflogMessage(out, 1), 'On master: second message')
+    assert.equal(stashReflogMessage(out, 2), 'On master: first message')
+  })
+
+  it('rewrites an older entry by counting back from the newest', () => {
+    const out = renameStashReflogEntry(reflog, 2, 'oldest renamed')
+    assert.equal(stashReflogMessage(out, 2), 'oldest renamed')
+    assert.equal(stashReflogMessage(out, 0), 'On master: third message')
+  })
+
+  it('keeps the commit fields before the tab and the trailing newline', () => {
+    const out = renameStashReflogEntry(reflog, 1, 'x')
+    const line = out.split('\n')[1]
+    assert.ok(line.startsWith('abc111 def222 a <a@b> 1792565876 +0800\t'))
+    assert.ok(out.endsWith('\n'))
+  })
+
+  it('flattens newlines so an entry stays one line', () => {
+    const out = renameStashReflogEntry(reflog, 0, 'line1\nline2')
+    assert.equal(out.split('\n').length, reflog.split('\n').length)
+    assert.equal(stashReflogMessage(out, 0), 'line1 line2')
+  })
+
+  it('handles a reflog without a trailing newline', () => {
+    const out = renameStashReflogEntry(reflog.replace(/\n$/, ''), 0, 'z')
+    assert.equal(out.endsWith('\n'), false)
+    assert.equal(stashReflogMessage(out, 0), 'z')
+  })
+
+  it('returns null for out-of-range or invalid indexes', () => {
+    assert.equal(renameStashReflogEntry(reflog, 3, 'x'), null)
+    assert.equal(renameStashReflogEntry(reflog, -1, 'x'), null)
+    assert.equal(renameStashReflogEntry(reflog, 1.5, 'x'), null)
+    assert.equal(renameStashReflogEntry('', 0, 'x'), null)
   })
 })

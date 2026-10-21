@@ -184,6 +184,7 @@ export type GitAction =
   | { readonly kind: 'stash-apply'; readonly index: number }
   | { readonly kind: 'stash-pop'; readonly index: number }
   | { readonly kind: 'stash-drop'; readonly index: number }
+  | { readonly kind: 'stash-rename'; readonly index: number; readonly message: string }
   | { readonly kind: 'ignore'; readonly patterns: readonly string[] }
   | { readonly kind: 'reveal'; readonly path: string }
   | { readonly kind: 'write-file'; readonly path: string; readonly content: string }

@@ -23,6 +23,8 @@ import { CreateBranchModal } from './modals/CreateBranch'
 import { CreateTagModal } from './modals/CreateTag'
 import { MergeBranchModal } from './modals/MergeBranch'
 import { StashSaveModal } from './modals/StashSave'
+import { StashApplyModal } from './modals/StashApply'
+import { RenameStashModal } from './modals/RenameStash'
 import { FetchModal, PullModal, PushModal } from './modals/RemoteSync'
 import { CheckoutModal, ConfirmModal } from './modals/Confirm'
 import { CherryPickModal } from './modals/CherryPick'
@@ -34,7 +36,7 @@ import { DeleteBranchModal } from './modals/DeleteBranch'
 import { FilePreviewModal } from './modals/FilePreview'
 import { TrackRemoteModal } from './modals/TrackRemote'
 import { RenameBranchModal } from './modals/RenameBranch'
-import type { GitAction } from './types'
+import type { GitAction, StashEntry } from './types'
 import type { GitKey } from './locales'
 
 interface PanelProps {
@@ -47,7 +49,9 @@ type ModalState =
   | { kind: 'branch'; startPoint?: string }
   | { kind: 'tag'; ref?: string }
   | { kind: 'merge'; preset?: string }
-  | { kind: 'stash'; paths?: readonly string[]; includeUntracked?: boolean }
+  | { readonly kind: 'stash'; paths?: readonly string[]; includeUntracked?: boolean }
+  | { readonly kind: 'stash-apply'; stash: StashEntry; dropAfter?: boolean }
+  | { readonly kind: 'stash-rename'; stash: StashEntry }
   | { kind: 'fetch' }
   | { kind: 'pull' }
   | { kind: 'push'; branch?: string; remote?: string }
@@ -250,6 +254,15 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
         danger: false,
       }),
       onRenameBranch: (oldName) => setModal({ kind: 'rename', oldName }),
+      onApplyStash: (stash) => setModal({ kind: 'stash-apply', stash }),
+      onRenameStash: (stash) => setModal({ kind: 'stash-rename', stash }),
+      onDropStash: (stash) => setModal({
+        kind: 'confirm',
+        title: t('modal.stashDropTitle'),
+        message: t('modal.stashDropConfirm', { name: stash.message }),
+        action: { kind: 'stash-drop', index: stash.index },
+        danger: true,
+      }),
       onEditRemote: (remote, url) => setModal({ kind: 'edit-remote', name: remote, url }),
       onDeleteRef: (kind, name, opts) => {
         if (kind === 'branch') {
@@ -352,6 +365,13 @@ function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element
     t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction,
     ...(modal.paths !== undefined ? { paths: modal.paths } : {}),
     ...(modal.includeUntracked === true ? { defaultUntracked: true } : {}),
+  })
+  if (modal.kind === 'stash-apply') return h(StashApplyModal, {
+    t: ctx.t, stash: modal.stash, onClose: ctx.onClose, onSubmit: ctx.onAction,
+    ...(modal.dropAfter === true ? { dropAfter: true } : {}),
+  })
+  if (modal.kind === 'stash-rename') return h(RenameStashModal, {
+    t: ctx.t, stash: modal.stash, onClose: ctx.onClose, onSubmit: ctx.onAction,
   })
   if (modal.kind === 'fetch') return h(FetchModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'pull') return h(PullModal, { remote: ctx.remote, sessionId: ctx.sessionId, t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction })

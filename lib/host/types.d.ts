@@ -223,6 +223,10 @@ export type GitAction = {
     readonly kind: 'stash-drop';
     readonly index: number;
 } | {
+    readonly kind: 'stash-rename';
+    readonly index: number;
+    readonly message: string;
+} | {
     readonly kind: 'ignore';
     readonly patterns: readonly string[];
 } | {

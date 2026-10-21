@@ -18,7 +18,7 @@ import { queryAs, type GitPanelRemote } from './rpc'
 import type { GitAction, GitBranch, GitSnapshot, StashEntry } from './types'
 import type { GitKey } from './locales'
 import type { SubTab } from './jump'
-import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, MoreIcon, PanelLeftIcon, PullIcon, PushIcon, RefreshIcon, TagIcon } from './icons'
+import { BranchIcon, ChevronIcon, CommitIcon, FetchIcon, FolderIcon, GitHubIcon, MoreIcon, PanelLeftIcon, PullIcon, PushIcon, RefreshIcon, StashIcon, TagIcon } from './icons'
 import { ContextMenu, copyText, menuAnchorAt, type MenuItem } from './ContextMenu'
 import { Tip } from './Tip'
 import { isGitHubRemote } from './avatar'
@@ -44,6 +44,9 @@ interface SidebarProps {
   readonly onPushBranch: (branch: string, remote: string) => void
   readonly onPushTag: (tag: string, remote: string) => void
   readonly onRenameBranch: (oldName: string) => void
+  readonly onApplyStash: (stash: StashEntry) => void
+  readonly onRenameStash: (stash: StashEntry) => void
+  readonly onDropStash: (stash: StashEntry) => void
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
   /** 'column' = in-flow resizable column (wide); 'drawer' = overlay (narrow). */
   readonly mode?: 'column' | 'drawer'
@@ -100,6 +103,7 @@ type RowMenu =
   | { readonly x: number; readonly y: number; readonly kind: 'remote'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'remote-folder'; readonly name: string }
   | { readonly x: number; readonly y: number; readonly kind: 'tag'; readonly name: string }
+  | { readonly x: number; readonly y: number; readonly kind: 'stash'; readonly stash: StashEntry }
   | { readonly x: number; readonly y: number; readonly kind: 'stash-create' }
 
 export function Sidebar(props: SidebarProps): JSX.Element {
@@ -114,7 +118,6 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   // stored. (Legacy `folders.closed` defaulted to expanded and is ignored.)
   const [folderOpen, setFolderOpen] = useState<ReadonlySet<string>>(readFolderOpen)
   const [menu, setMenu] = useState<RowMenu | null>(null)
-  const [armedStashDrop, setArmedStashDrop] = useState<number | null>(null)
   // Manual list refresh (branches/tags/stashes re-query; picks up external
   // branch deletes without waiting for the next snapshot poll).
   const [reloadSeq, setReloadSeq] = useState(0)
@@ -234,6 +237,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const onPushBranch: SidebarProps['onPushBranch'] = (branch, remote) => { close(); props.onPushBranch(branch, remote) }
   const onPushTag: SidebarProps['onPushTag'] = (tag, remote) => { close(); props.onPushTag(tag, remote) }
   const onRenameBranch: SidebarProps['onRenameBranch'] = (oldName) => { close(); props.onRenameBranch(oldName) }
+  const onApplyStash: SidebarProps['onApplyStash'] = (stash) => { close(); props.onApplyStash(stash) }
+  const onRenameStash: SidebarProps['onRenameStash'] = (stash) => { close(); props.onRenameStash(stash) }
+  const onDropStash: SidebarProps['onDropStash'] = (stash) => { close(); props.onDropStash(stash) }
   // A direct action (checkout, stash apply/pop/drop) runs in place with no
   // dialog, so the drawer has to close for those too.
   const run = async (action: GitAction): Promise<void> => { close(); await onAction(action) }
@@ -298,9 +304,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
     onMenu: (x, y) => setMenu({ x, y, kind: 'tag', name: b.name }),
     t,
   }))
-  const stashRows = stashes.map((s) => renderStashRow(s, t, run, armedStashDrop === s.index, {
-    onArm: () => setArmedStashDrop(s.index),
-    onDrop: () => { setArmedStashDrop(null); void run({ kind: 'stash-drop', index: s.index }) },
+  const stashRows = stashes.map((s) => renderStashRow(s, {
+    onMenu: (x, y) => setMenu({ x, y, kind: 'stash', stash: s }),
+    moreLabel: t('menu.more'),
   }))
   // Remote-tracking refs grouped by remote name (`origin/main` → folder
   // `origin`), same folder component as local branches. Keys are prefixed so
@@ -377,6 +383,13 @@ export function Sidebar(props: SidebarProps): JSX.Element {
           onDeleteRef('branch', delName, delRemote ?? undefined)
         },
       }]),
+    ]
+    : menu.kind === 'stash'
+    ? [
+      { key: 'ap', label: t('side.apply'), onSelect: () => onApplyStash(menu.stash) },
+      { key: 'rn', label: t('menu.rename'), onSelect: () => onRenameStash(menu.stash) },
+      sep('s1'),
+      { key: 'dr', label: t('side.drop'), danger: true, onSelect: () => onDropStash(menu.stash) },
     ]
     : menu.kind === 'remote'
     ? [
@@ -709,34 +722,20 @@ function renderTagRow(b: GitBranch, isActive: boolean, cb: TagRowCbs): JSX.Eleme
 
 function renderStashRow(
   s: StashEntry,
-  t: SidebarProps['t'],
-  run: (action: GitAction) => Promise<void>,
-  armed: boolean,
-  cb: { readonly onArm: () => void; readonly onDrop: () => void },
+  cb: { readonly onMenu: (x: number, y: number) => void; readonly moreLabel: string },
 ): JSX.Element {
-  return h('div', { key: `s-${s.index}`, className: 'gp-branch-row', title: s.message }, [
-      h('span', { key: 'i', className: 'gp-row-icon' }, h(TagIcon, { size: 13 })),
-      h('span', { key: 'n', className: 'gp-tree-name' }, `stash@{${s.index}} ${s.message}`),
-      h('span', { key: 'ops', className: 'gp-side__ops' }, [
-        h(Tip, {
-          key: 'ap', label: t('side.apply'),
-          children: h('button', { type: 'button', onClick: () => void run({ kind: 'stash-apply', index: s.index }) }, '⤓'),
-        }),
-        h(Tip, {
-          key: 'pp', label: t('side.pop'),
-          children: h('button', { type: 'button', onClick: () => void run({ kind: 'stash-pop', index: s.index }) }, '⤒'),
-        }),
-        armed
-          ? h(Tip, {
-            key: 'dr2', label: t('side.drop'),
-            children: h('button', { type: 'button', className: 'gp-side__danger', onClick: cb.onDrop }, '✓'),
-          })
-          : h(Tip, {
-            key: 'dr', label: t('side.drop'),
-            children: h('button', { type: 'button', onClick: cb.onArm }, '×'),
-          }),
-      ]),
-    ])
+  return h('div', {
+    key: `s-${s.index}`, className: 'gp-branch-row', title: s.message,
+    onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => {
+      e.preventDefault()
+      e.stopPropagation()
+      cb.onMenu(e.clientX, e.clientY)
+    },
+  }, [
+    h('span', { key: 'i', className: 'gp-row-icon' }, h(StashIcon, { size: 13 })),
+    h('span', { key: 'n', className: 'gp-tree-name' }, s.message),
+    moreButton(cb.moreLabel, cb.onMenu),
+  ])
 }
 
 function Group(props: {

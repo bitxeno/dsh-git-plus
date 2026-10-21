@@ -252,6 +252,10 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
       const verb = action.kind === 'stash-apply' ? 'apply' : action.kind === 'stash-pop' ? 'pop' : 'drop'
       return { argv: [['git', 'stash', verb, `stash@{${action.index}}`]] }
     }
+    case 'stash-rename':
+      // Executed directly in runAction (rewrites the stash reflog, not a git
+      // command); reaching the planner with it is a programming error.
+      return { error: 'git-error', message: 'stash-rename has no command plan' }
     case 'ignore':
       // Executed directly in runAction (a .gitignore file write, not a git
       // command); reaching the planner with it is a programming error.
@@ -364,6 +368,9 @@ export async function runAction(
   }
   if (action.kind === 'write-file') {
     return await writeFileContent(deps, config, root, request.sessionId, action.path, action.content)
+  }
+  if (action.kind === 'stash-rename') {
+    return await renameStash(deps, config, root, request.sessionId, action.index, action.message)
   }
   if (action.kind === 'create-tag' && action.push === true && action.pushRemote === undefined) {
     const remote = await resolvePushRemote(deps, root)
@@ -498,6 +505,80 @@ async function appendGitignore(
   const snapshot = await snapshotForSession(deps, config, sessionId)
   if (!snapshot.ok) return { ok: false, error: { code: 'git-error', message: 'snapshot after action failed' } }
   return { ok: true, snapshot: snapshot.value, output: fresh.join('\n') }
+}
+
+/**
+ * Rewrite one stash reflog entry's message. Entries are the lines of
+ * `.git/logs/refs/stash`; new entries append at the end, so the *newest* line
+ * is `stash@{0}` and index N counts back from there. A reflog line is
+ * `<old> <new> <ident> <ts> <tz>\t<message>`, with the message as the only
+ * field after the tab — git itself flattens newlines in `stash push -m`, so
+ * one entry is always one line.
+ * Returns null when the index is out of range. Pure, so it stays testable.
+ */
+export function renameStashReflogEntry(reflog: string, index: number, message: string): string | null {
+  if (!Number.isInteger(index) || index < 0) return null
+  const lines = reflog.split('\n')
+  const trailing = lines.length > 0 && lines[lines.length - 1] === ''
+  const body = trailing ? lines.slice(0, -1) : lines
+  const at = body.length - 1 - index
+  if (at < 0 || body[at] === undefined) return null
+  const line = body[at]!
+  const tab = line.indexOf('\t')
+  if (tab < 0) return null
+  // Newlines inside a message would corrupt the line-per-entry layout; flatten
+  // them so the entry stays one line (git's own `stash push -m` does the same).
+  const flat = message.replace(/[\r\n]+/g, ' ').trim()
+  body[at] = `${line.slice(0, tab + 1)}${flat}`
+  return body.join('\n') + (trailing ? '\n' : '')
+}
+
+/** Message of the stash entry at `index` in a reflog dump (newest-first). */
+export function stashReflogMessage(reflog: string, index: number): string | null {
+  const lines = reflog.split('\n').filter((line) => line !== '')
+  const line = lines[lines.length - 1 - index]
+  if (line === undefined) return null
+  const tab = line.indexOf('\t')
+  return tab < 0 ? null : line.slice(tab + 1)
+}
+
+/**
+ * Rename a stash by rewriting its reflog message. `git stash` has no rename
+ * subcommand (2.50 still doesn't), and every entry's message lives only in the
+ * reflog, so this edits that file directly. The stash commit is untouched —
+ * only the label the sidebar lists changes.
+ */
+async function renameStash(
+  deps: SnapshotDeps,
+  config: GitPanelConfig,
+  root: string,
+  sessionId: string,
+  index: number,
+  message: string,
+): Promise<GitActionResult> {
+  if (!Number.isInteger(index) || index < 0) return { ok: false, error: { code: 'invalid-name', message: `bad stash index: ${index}` } }
+  if (message.trim() === '') return { ok: false, error: { code: 'invalid-name', message: 'empty stash message' } }
+  const gitDirRes = await runCommand(deps.run, ['git', 'rev-parse', '--absolute-git-dir'], root, 'git-dir', deps.signal)
+  if (!('run' in gitDirRes) || gitDirRes.run.exitCode !== 0) {
+    return { ok: false, error: { code: 'git-error', message: 'cannot locate the git dir' } }
+  }
+  const reflogPath = join(gitDirRes.run.stdout.trim(), 'logs', 'refs', 'stash')
+  let reflog = ''
+  try {
+    reflog = (await deps.fs.readFile(reflogPath)).toString('utf8')
+  } catch {
+    return { ok: false, error: { code: 'git-error', message: 'no stash entries' } }
+  }
+  const next = renameStashReflogEntry(reflog, index, message)
+  if (next === null) return { ok: false, error: { code: 'invalid-name', message: `no stash at index ${index}` } }
+  try {
+    await deps.fs.writeFile(reflogPath, next)
+  } catch (error) {
+    return { ok: false, error: { code: 'git-error', message: error instanceof Error ? error.message : 'write stash reflog failed' } }
+  }
+  const snapshot = await snapshotForSession(deps, config, sessionId)
+  if (!snapshot.ok) return { ok: false, error: { code: 'git-error', message: 'snapshot after action failed' } }
+  return { ok: true, snapshot: snapshot.value, output: '' }
 }
 
 /**

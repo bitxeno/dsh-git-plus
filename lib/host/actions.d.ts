@@ -35,6 +35,18 @@ export declare function runAction(deps: SnapshotDeps, config: GitPanelConfig, re
  */
 export declare function isEmptyCherryPick(output: string, conflictFiles: readonly string[]): boolean;
 /**
+ * Rewrite one stash reflog entry's message. Entries are the lines of
+ * `.git/logs/refs/stash`; new entries append at the end, so the *newest* line
+ * is `stash@{0}` and index N counts back from there. A reflog line is
+ * `<old> <new> <ident> <ts> <tz>\t<message>`, with the message as the only
+ * field after the tab — git itself flattens newlines in `stash push -m`, so
+ * one entry is always one line.
+ * Returns null when the index is out of range. Pure, so it stays testable.
+ */
+export declare function renameStashReflogEntry(reflog: string, index: number, message: string): string | null;
+/** Message of the stash entry at `index` in a reflog dump (newest-first). */
+export declare function stashReflogMessage(reflog: string, index: number): string | null;
+/**
  * Split discard paths into untracked (removed from disk) vs tracked (git
  * restore). A path inside an untracked directory entry is itself untracked,
  * covering rows the client synthesizes by expanding such dirs (they are not
