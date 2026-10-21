@@ -17,7 +17,10 @@ import { statusChar, statusClass } from './status'
 import { useResizableColumn, useResizableRow } from './resizable'
 import { segButtons } from './seg'
 import { ContextMenu, menuAnchorAt, type MenuItem } from './ContextMenu'
-import { ignorePatternForDir, ignorePatternsForFile } from './ignore-pattern'
+import {
+  buildChangeMenuItems, dirKeyOf, isRowInSelection, isSelectedDirAlive, resolveMenuTarget, rowKeyOf,
+  type ChangeMenuTarget,
+} from './change-menu'
 import { downloadTextFile } from './download'
 
 interface ChangesTabProps {
@@ -32,10 +35,6 @@ interface ChangesTabProps {
 }
 
 type GroupKey = 'unstaged' | 'staged'
-
-type ChangeMenuTarget =
-  | { readonly kind: 'file'; readonly change: GitChange }
-  | { readonly kind: 'dir'; readonly dir: string; readonly stagedSide: boolean; readonly leaves: readonly GitChange[] }
 
 interface ChangeMenuState {
   readonly x: number
@@ -52,6 +51,19 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   const [closedDirs, setClosedDirs] = useState<ReadonlySet<string>>(new Set())
   const [activeDir, setActiveDir] = useState<string | null>(null)
   const [armedDiscard, setArmedDiscard] = useState<string | null>(null)
+  // Cmd/Ctrl+A selection: row keys (`path:s` / `path:w`) so a path that is both
+  // staged and modified selects as two rows, matching what the list shows.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  // Group the pointer last entered, and whether it is over the change list at
+  // all. The shortcut is about the list, so it stays inert over the diff pane
+  // (where Cmd/Ctrl+A must keep selecting text). Starts true so the keyboard
+  // path works before the pointer has ever moved; leaving the list turns it
+  // off until the pointer returns.
+  const hoverGroup = useRef<GroupKey | null>(null)
+  const inList = useRef(true)
+  // The tab stays mounted (display:none) after the user switches to All Commits,
+  // so the window-level shortcut has to check that this pane is the visible one.
+  const rootRef = useRef<HTMLDivElement | null>(null)
   // Host platform for the reveal-in-file-manager menu entry (macOS/Windows
   // only; Linux hides it). Static per session, fetched once.
   const [menu, setMenu] = useState<ChangeMenuState | null>(null)
@@ -240,6 +252,50 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   // may be gone) so the destructive "click again" state can't linger.
   useEffect(() => { setArmedDiscard(null) }, [snapshot])
 
+  // Drop selected rows that left the snapshot (staged, discarded, committed),
+  // so a stale key never feeds a bulk action with a path git no longer sees.
+  // Folder keys survive while anything under the folder is still a change.
+  useEffect(() => {
+    if (selected.size === 0) return
+    const live = new Set(snapshot.changes.map(rowKeyOf))
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((k) => (k.startsWith('d:') ? isSelectedDirAlive(k, snapshot.changes) : live.has(k))))
+      return next.size === prev.size ? prev : next
+    })
+  }, [snapshot, selected])
+
+  /**
+   * Cmd/Ctrl+A selects every file in one group — the "更改" or "已暂存的更改"
+   * pane the pointer is in, which is what a right-click then acts on. A window
+   * listener is needed because rows are not focusable: focus sits on body, so a
+   * handler on the list container would never see the key. Editable targets
+   * (commit message, dialogs, diff find box) keep their native select-all.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const root = rootRef.current
+      if (root === null || root.offsetParent === null) return
+      if (!inList.current) return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable === true) return
+      // Esc drops the selection, the way it clears a list elsewhere.
+      if (e.key === 'Escape' && selected.size > 0) { setSelected(new Set()); return }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'a') return
+      // The pane under the pointer, unless it is empty — then the other pane,
+      // so the shortcut always selects something visible.
+      const preferred = hoverGroup.current
+      const inGroup = (staged: boolean): GitChange[] => snapshot.changes.filter((c) => c.staged === staged)
+      const first = inGroup(preferred === 'staged')
+      const rows = first.length > 0 ? first : inGroup(preferred !== 'staged')
+      if (rows.length === 0) return
+      e.preventDefault()
+      setSelected(new Set(rows.map(rowKeyOf)))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [snapshot, selected])
+
   const run = async (action: GitAction): Promise<boolean> => {
     if (busy) return false
     setBusy(true)
@@ -309,12 +365,48 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   }
 
   /**
-   * Paths the group header button acts on: the selected folder's files (when
-   * the selection is inside this group), the open diff's file, or null for
-   * the whole group when nothing relevant is selected.
+   * Change entries a selection covers on one side: a selected folder stands for
+   * everything under it (one entry for a collapsed untracked dir, whose files
+   * git never listed), a selected file for itself. Deduped, because a folder
+   * and one of its files can both be selected.
+   */
+  const selectionChanges = (stagedSide: boolean): GitChange[] => {
+    if (selected.size === 0) return []
+    const sideKey = stagedSide ? 's' : 'w'
+    const tree = stagedSide ? stagedFull : unstagedFull
+    const out: GitChange[] = []
+    const seen = new Set<string>()
+    const add = (c: GitChange): void => {
+      const key = rowKeyOf(c)
+      if (seen.has(key)) return
+      seen.add(key)
+      out.push(c)
+    }
+    for (const key of selected) {
+      if (!key.startsWith('d:')) continue
+      const dirKey = key.slice(2)
+      if (!dirKey.startsWith(`${sideKey}:`)) continue
+      const node = findTreeNode(tree, dirKey.slice(2))
+      if (node !== null) collectLeafChanges(node).forEach(add)
+    }
+    for (const c of snapshot.changes) {
+      if (c.staged === stagedSide && selected.has(rowKeyOf(c))) add(c)
+    }
+    return out
+  }
+
+  /**
+   * Paths the group header button acts on: the multi-selection inside this
+   * group, the selected folder's files (when the selection is inside this
+   * group), the open diff's file, or null for the whole group when nothing
+   * relevant is selected.
    */
   const selectedPathsFor = (tree: readonly FileTreeNode[], stagedSide: boolean): string[] | null => {
     const sideKey = stagedSide ? 's' : 'w'
+    if (selected.size > 0) {
+      const inGroup = selectionChanges(stagedSide)
+      if (inGroup.length > 0) return inGroup.map((c) => c.path)
+    }
     if (activeDir !== null && activeDir.startsWith(`${sideKey}:`)) {
       const node = findTreeNode(tree, activeDir.slice(2))
       return node !== null ? collectLeafPaths(node) : []
@@ -328,6 +420,31 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
     void run(stagedSide ? { kind: 'unstage', paths: [...paths] } : { kind: 'stage', paths: [...paths] })
   }
 
+  /**
+   * Whether a row is in the selection, directly or through a selected ancestor
+   * folder — selecting a folder stands for its files, so they highlight too and
+   * a right-click on any of them keeps acting on the whole selection.
+   */
+  const isRowSelected = (key: string, path: string, stagedSide: boolean): boolean =>
+    isRowInSelection(selected, key, path, stagedSide)
+
+  /** Right-click target: the whole selection, or just the row clicked. */
+  const menuTargetFor = (rowKey: string, inSelection: boolean, stagedSide: boolean, single: ChangeMenuTarget): ChangeMenuTarget =>
+    resolveMenuTarget({ selected, rowKey, inSelection, stagedSide, leaves: selectionChanges(stagedSide), single })
+
+  /**
+   * Cmd/Ctrl+click toggles one row (file or folder); a plain click keeps the
+   * list's primary action (open the diff / the folder) and clears the
+   * selection, so selecting and browsing never fight over the same click.
+   */
+  const toggleKey = (key: string): void => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
   const renderTree = (nodes: readonly FileTreeNode[], depth: number, stagedSide: boolean): JSX.Element[] => {
     const out: JSX.Element[] = []
     const sideKey = stagedSide ? 's' : 'w'
@@ -338,12 +455,18 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
         const paths = collectLeafPaths(node)
         const discardKey = `d:${dirKey}`
         const dirArmed = armedDiscard === discardKey
+        const dirSelKey = dirKeyOf(node.path, stagedSide)
         out.push(h('div', {
-          key: `d:${dirKey}`,
-          className: `gp-tdir${activeDir === dirKey ? ' gp-tdir--active' : ''}`,
+          key: dirSelKey,
+          className: `gp-tdir${activeDir === dirKey ? ' gp-tdir--active' : ''}${selected.has(dirSelKey) ? ' gp-tdir--selected' : ''}`,
           style: { paddingLeft: 10 + depth * 16 },
           title: node.path,
-            onClick: () => {
+            onClick: (e: { metaKey: boolean; ctrlKey: boolean }) => {
+              // A plain click makes this folder the whole selection, so a
+              // following Cmd/Ctrl+click extends it (two folders, or a folder
+              // plus files). Cmd/Ctrl+click toggles this folder in place.
+              if (e.metaKey || e.ctrlKey) { toggleKey(dirSelKey); return }
+              setSelected(new Set([dirSelKey]))
               setActiveDir((prev) => (prev === dirKey ? null : dirKey))
               setDiffPath(null)
               setDiffText(null)
@@ -351,7 +474,13 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
             onDoubleClick: () => stagePaths(paths, stagedSide),
             onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => {
               e.preventDefault(); e.stopPropagation()
-              setMenu({ x: e.clientX, y: e.clientY, target: { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) } })
+              // Right-clicking outside the selection targets this folder alone;
+              // the highlight follows so the menu never acts on invisible rows.
+              if (!selected.has(dirSelKey)) setSelected(new Set())
+              setMenu({
+                x: e.clientX, y: e.clientY,
+                target: menuTargetFor(dirSelKey, selected.has(dirSelKey), stagedSide, { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) }),
+              })
             },
           }, [
             h('span', {
@@ -383,7 +512,10 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
                   onClick: (e: Event) => {
                     e.stopPropagation()
                     const p = menuAnchorAt(e)
-                    setMenu({ x: p.x, y: p.y, target: { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) } })
+                    setMenu({
+                      x: p.x, y: p.y,
+                      target: menuTargetFor(dirSelKey, selected.has(dirSelKey), stagedSide, { kind: 'dir', dir: node.path, stagedSide, leaves: collectLeafChanges(node) }),
+                    })
                   },
                 }, h(MoreIcon, { size: 15 })),
               }),
@@ -406,20 +538,34 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
         }
       } else {
         const c = node.meta as GitChange
-        const rowKey = c.path + (c.staged ? ':s' : ':w')
+        const rowKey = rowKeyOf(c)
+        const fileSelected = isRowSelected(rowKey, c.path, c.staged)
         out.push(renderFileRow(c, {
           depth,
           active: diffPath?.path === c.path && diffPath.base === (c.staged ? 'staged' : 'worktree'),
+          selected: fileSelected,
           busy,
           armed: armedDiscard === rowKey,
-          onOpen: () => void showDiff(c.path, c.staged ? 'staged' : 'worktree'),
+          onOpen: (additive: boolean) => {
+            // Same rule as folders: a plain click selects just this row (then
+            // Cmd/Ctrl+click extends), an additive click toggles it.
+            if (additive) { toggleKey(rowKey); return }
+            setSelected(new Set([rowKey]))
+            void showDiff(c.path, c.staged ? 'staged' : 'worktree')
+          },
           onStage: () => void run(c.staged ? { kind: 'unstage', paths: [c.path] } : { kind: 'stage', paths: [c.path] }),
           onPreview: () => onPreviewFile(c.path),
           onDiscard: () => {
             if (armedDiscard === rowKey) { void run({ kind: 'discard', paths: [c.path] }); setArmedDiscard(null) }
             else setArmedDiscard(rowKey)
           },
-          onMenu: (x, y) => setMenu({ x, y, target: { kind: 'file', change: c } }),
+          onMenu: (x, y) => {
+            // Right-clicking outside the selection targets that row alone; the
+            // highlight follows, so the menu never acts on something invisible.
+            const inSelection = isRowSelected(rowKey, c.path, c.staged)
+            if (!inSelection) setSelected(new Set())
+            setMenu({ x, y, target: menuTargetFor(rowKey, inSelection, c.staged, { kind: 'file', change: c }) })
+          },
           t,
         }))
       }
@@ -430,7 +576,13 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
   const renderGroup = (
     key: GroupKey, label: string, tree: readonly FileTreeNode[], stagedSide: boolean, count: number,
     style?: { flex?: string },
-  ): JSX.Element => h('div', { key, className: 'gp-changes__group gp-pane', ...(style !== undefined ? { style } : {}) }, [
+  ): JSX.Element => h('div', {
+    key,
+    className: 'gp-changes__group gp-pane',
+    ...(style !== undefined ? { style } : {}),
+    // Remember the pane the pointer is in so Cmd/Ctrl+A selects the right one.
+    onMouseEnter: () => { hoverGroup.current = key },
+  }, [
     h('div', { key: 'head', className: 'gp-changes__grouphead', onClick: () => toggleGroup(key) }, [
       h(ChevronIcon, { key: 'chev', size: 12, open: !closed.has(key) }),
       h('span', { key: 't' }, `${label} (${count})`),
@@ -488,12 +640,16 @@ export function ChangesTab({ remote, sessionId, snapshot, onAction, onStashPaths
     t,
   })
 
-  return h('div', { className: 'gp-changes' }, [
+  return h('div', { className: 'gp-changes', ref: rootRef }, [
     // left
     h('div', { key: 'left', className: 'gp-changes__left', style: { flex: `0 0 ${leftCol.width}px` } }, [
       h(ChangeStats, { key: 'stats', stats: snapshot.stats, t }),
       error !== null ? h('div', { key: 'err', className: 'gp-feedback' }, error) : null,
-      h('div', { key: 'panes', ref: split.containerRef, className: 'gp-changes__panes' },
+      h('div', {
+        key: 'panes', ref: split.containerRef, className: 'gp-changes__panes',
+        onMouseEnter: () => { inList.current = true },
+        onMouseLeave: () => { inList.current = false },
+      },
         snapshot.changes.length === 0
           ? h('div', { className: 'gp-empty' }, t('changes.noChanges'))
           : [
@@ -571,9 +727,11 @@ function dirChangeOf(node: FileTreeNode): GitChange | null {
 interface RowActions {
   depth: number
   active: boolean
+  /** Part of the Cmd/Ctrl+A (or additive-click) selection. */
+  selected: boolean
   busy: boolean
   armed: boolean
-  onOpen: () => void
+  onOpen: (additive: boolean) => void
   onStage: () => void
   onPreview: () => void
   onDiscard: () => void
@@ -585,10 +743,10 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
   const name = c.path.split('/').pop() ?? c.path
   return h('div', {
     key: c.path + (c.staged ? ':s' : ':w'),
-    className: `gp-file-row${a.active ? ' gp-file-row--active' : ''}`,
+    className: `gp-file-row${a.active ? ' gp-file-row--active' : ''}${a.selected ? ' gp-file-row--selected' : ''}`,
     style: { paddingLeft: 10 + a.depth * 16 },
     title: c.path,
-    onClick: a.onOpen,
+    onClick: (e: { metaKey: boolean; ctrlKey: boolean }) => a.onOpen(e.metaKey || e.ctrlKey),
     onDoubleClick: () => a.onStage(),
     onContextMenu: (e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => { e.preventDefault(); e.stopPropagation(); a.onMenu(e.clientX, e.clientY) },
   }, [
@@ -616,101 +774,6 @@ function renderFileRow(c: GitChange, a: RowActions): JSX.Element {
   ])
 }
 
-interface ChangeMenuCbs {
-  readonly view: (path: string) => void
-  /** Reveal-in-file-manager entry; null hides it (unsupported platform). */
-  readonly reveal: { readonly label: string; readonly run: (path: string) => void } | null
-  readonly stage: (paths: readonly string[], stagedSide: boolean) => void
-  readonly stash: (paths: readonly string[], includeUntracked: boolean) => void
-  readonly patch: (paths: readonly string[]) => void
-  readonly ignore: (patterns: readonly string[]) => void
-  readonly discard: (paths: readonly string[], count: number) => void
-  readonly t: (key: GitKey, params?: Record<string, string | number>) => string
-}
 
-/**
- * Context menu items for a file or folder target, grouped by function with
- * separators: stage | stash + patch | ignore patterns | discard (danger).
- * Stash/patch hide for conflicted targets (git cannot stash unmerged paths);
- * ignore only offers for untracked content.
- */
-function buildChangeMenuItems(target: ChangeMenuTarget, cb: ChangeMenuCbs): MenuItem[] {
-  const changes = target.kind === 'file' ? [target.change] : [...target.leaves]
-  const paths = changes.map((c) => c.path)
-  const n = changes.length
-  const stagedSide = target.kind === 'file' ? target.change.staged : target.stagedSide
-  const hasConflicted = changes.some((c) => c.status === 'conflicted')
-  const hasUntracked = changes.some((c) => c.status === 'untracked')
-  const sep = (key: string): MenuItem => ({ key, separator: true })
-
-  const sections: MenuItem[][] = []
-  // View leads: a read-only preview modal (file targets only), then the
-  // native file-manager reveal (macOS/Windows only).
-  const nav: MenuItem[] = []
-  if (target.kind === 'file') {
-    nav.push({
-      key: 'view',
-      label: cb.t('menu.view'),
-      onSelect: () => cb.view(target.change.path),
-    })
-  }
-  if (cb.reveal !== null) {
-    const reveal = cb.reveal
-    // Directories reveal as one entry (opening every leaf would pop N windows).
-    const revealPath = target.kind === 'file' ? target.change.path : target.dir
-    nav.push({
-      key: 'reveal',
-      label: reveal.label,
-      onSelect: () => reveal.run(revealPath),
-    })
-  }
-  if (nav.length > 0) sections.push(nav)
-  sections.push([{
-    key: 'stage',
-    label: stagedSide
-      ? (n === 1 ? cb.t('changes.unstage') : cb.t('menu.unstageFiles', { n }))
-      : (n === 1 ? cb.t('changes.stage') : cb.t('menu.stageFiles', { n })),
-    onSelect: () => cb.stage(paths, stagedSide),
-  }])
-  if (!hasConflicted) {
-    sections.push([
-      { key: 'stash', label: cb.t('menu.stashFiles', { n }), onSelect: () => cb.stash(paths, hasUntracked) },
-      { key: 'patch', label: cb.t('menu.savePatch'), onSelect: () => cb.patch(paths) },
-    ])
-  }
-  const ignoreItems: MenuItem[] = []
-  if (target.kind === 'file' && target.change.status === 'untracked') {
-    if (target.change.isDirectory) {
-      const pattern = ignorePatternForDir(target.change.path)
-      ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern }), onSelect: () => cb.ignore([pattern]) })
-    } else {
-      const { exact, ext } = ignorePatternsForFile(target.change.path)
-      ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern: exact }), onSelect: () => cb.ignore([exact]) })
-      if (ext !== undefined) {
-        ignoreItems.push({ key: 'ign-ext', label: cb.t('menu.ignoreExt', { ext: ext.slice(2) }), onSelect: () => cb.ignore([ext]) })
-      }
-    }
-  } else if (target.kind === 'dir' && hasUntracked) {
-    const pattern = ignorePatternForDir(target.dir)
-    ignoreItems.push({ key: 'ign', label: cb.t('menu.ignorePath', { pattern }), onSelect: () => cb.ignore([pattern]) })
-  }
-  if (ignoreItems.length > 0) sections.push(ignoreItems)
-  // Staged targets cannot be discarded directly (`git restore` clears the
-  // worktree, not the index): the action only appears for unstaged content.
-  if (!stagedSide) {
-    sections.push([{
-      key: 'discard',
-      label: n === 1 ? cb.t('changes.discard') : cb.t('menu.discardFiles', { n }),
-      danger: true,
-      onSelect: () => cb.discard(paths, n),
-    }])
-  }
-  const items: MenuItem[] = []
-  sections.forEach((section, i) => {
-    if (i > 0) items.push(sep(`s${i}`))
-    items.push(...section)
-  })
-  return items
-}
 
 

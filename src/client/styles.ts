@@ -242,6 +242,10 @@ const CSS = `
  * (business-primary 16% tint + a 3px inset left bar), for one selection
  * language across panes. */
 .gp-file-row--active,.gp-file-row--active:hover{background:var(--gp-select-bg);box-shadow:var(--gp-select-bar)}
+/* Multi-row selection (Cmd/Ctrl+A or additive click): the same tint without
+ * the left bar, so it reads as a set and never competes with the row that is
+ * actually open in the diff pane. */
+.gp-file-row--selected,.gp-file-row--selected:hover{background:var(--gp-select-bg)}
 /* Actions occupy a fixed lane at all times (visibility toggle, not display)
  * so hovering never changes the row's width — no wobble. */
 .gp-file-row__actions{margin-left:auto;display:flex;gap:0;flex:none;visibility:hidden}
@@ -254,6 +258,8 @@ const CSS = `
 .gp-tdir{display:flex;align-items:center;gap:6px;padding-top:4px;padding-bottom:4px;padding-right:10px;cursor:default;font-size:12px;border-radius:4px;color:var(--dsw-alias-label-primary)}
 .gp-tdir:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .gp-tdir--active,.gp-tdir--active:hover{background:var(--gp-select-bg);box-shadow:var(--gp-select-bar)}
+/* Folder rows in a multi-selection: same tint, no left bar (see file rows). */
+.gp-tdir--selected,.gp-tdir--selected:hover{background:var(--gp-select-bg)}
 .gp-tdir__chev{display:inline-flex;cursor:pointer;border-radius:4px}
 .gp-tdir__actions{margin-left:auto;display:flex;gap:0;flex:none;visibility:hidden}
 .gp-tdir:hover .gp-tdir__actions{visibility:visible}

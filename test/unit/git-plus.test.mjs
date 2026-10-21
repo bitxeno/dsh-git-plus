@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, renameStashReflogEntry, stashReflogMessage, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir, parseMergeTreeConflicts } from '../../lib/testkit.mjs'
+import { parseStashList, pickDefaultRemote, planAction, planContinueAbort, resolvePushRemote, parseBranches, parseAuthors, partitionUntracked, markRemotePresence, isNetworkCommand, isEmptyCherryPick, renameStashReflogEntry, stashReflogMessage, isSafeIgnorePattern, escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir, parseMergeTreeConflicts, buildChangeMenuItems, buildSelectionMenuItems, rowKeyOf, dirKeyOf, isRowInSelection, isSelectedDirAlive, resolveMenuTarget } from '../../lib/testkit.mjs'
 
 describe('parseStashList', () => {
   it('parses stash entries', () => {
@@ -445,5 +445,219 @@ describe('stash reflog rename', () => {
     assert.equal(renameStashReflogEntry(reflog, -1, 'x'), null)
     assert.equal(renameStashReflogEntry(reflog, 1.5, 'x'), null)
     assert.equal(renameStashReflogEntry('', 0, 'x'), null)
+  })
+})
+
+describe('buildSelectionMenuItems (Cmd/Ctrl+A pane selection)', () => {
+  const change = (path, staged, status = 'modified', isDirectory = false) => ({ path, staged, status, isDirectory })
+  const cbs = (spy) => ({
+    view: () => {},
+    reveal: null,
+    stage: (paths, stagedSide) => spy.push(['stage', paths, stagedSide]),
+    stash: (paths, includeUntracked) => spy.push(['stash', paths, includeUntracked]),
+    patch: (paths) => spy.push(['patch', paths]),
+    ignore: (patterns) => spy.push(['ignore', patterns]),
+    discard: (paths, count) => spy.push(['discard', paths, count]),
+    t: (key, params) => (params === undefined ? key : `${key}:${JSON.stringify(params)}`),
+  })
+  const keys = (items) => items.map((i) => i.key)
+  const label = (items, key) => items.find((i) => i.key === key)?.label
+
+  it('offers stage, stash, patch and discard for an unstaged selection', () => {
+    const spy = []
+    const items = buildSelectionMenuItems([change('a.txt', false), change('b.txt', false)], false, cbs(spy))
+    assert.deepEqual(keys(items), ['stage', 's1', 'stash', 'patch', 's2', 'discard'])
+    assert.equal(label(items, 'stage'), 'menu.stageFiles:{"n":2}')
+    assert.equal(label(items, 'discard'), 'menu.discardFiles:{"n":2}')
+  })
+
+  it('offers unstage and no discard for a staged selection', () => {
+    const spy = []
+    const items = buildSelectionMenuItems([change('a.txt', true), change('b.txt', true)], true, cbs(spy))
+    assert.deepEqual(keys(items), ['stage', 's1', 'stash', 'patch'])
+    assert.equal(label(items, 'stage'), 'menu.unstageFiles:{"n":2}')
+  })
+
+  it('uses the singular label for a one-row selection', () => {
+    const items = buildSelectionMenuItems([change('only.txt', false)], false, cbs([]))
+    assert.equal(label(items, 'stage'), 'changes.stage')
+    assert.equal(label(items, 'discard'), 'changes.discard')
+  })
+
+  it('hides stash and patch when the selection has a conflict', () => {
+    const items = buildSelectionMenuItems([change('a.txt', false), change('c.txt', false, 'conflicted')], false, cbs([]))
+    assert.ok(!keys(items).includes('stash'))
+    assert.ok(!keys(items).includes('patch'))
+  })
+
+  it('dedupes ignore patterns for untracked files and dirs', () => {
+    const spy = []
+    const changes = [
+      change('new.txt', false, 'untracked'),
+      change('other/new.txt', false, 'untracked'),
+      change('docs', false, 'untracked', true),
+    ]
+    const items = buildSelectionMenuItems(changes, false, cbs(spy))
+    const ign = items.find((i) => i.key === 'ign')
+    assert.ok(ign !== undefined)
+    ign.onSelect()
+    assert.deepEqual(spy, [['ignore', ['new.txt', 'other/new.txt', 'docs/']]])
+  })
+
+  it('omits the ignore entry when nothing is untracked', () => {
+    const items = buildSelectionMenuItems([change('a.txt', false)], false, cbs([]))
+    assert.ok(!keys(items).includes('ign'))
+  })
+
+  it('routes every action through the callbacks with the selected paths', () => {
+    const spy = []
+    const items = buildSelectionMenuItems([change('a.txt', false), change('b/c.txt', false)], false, cbs(spy))
+    for (const key of ['stage', 'stash', 'patch', 'discard']) {
+      items.find((i) => i.key === key).onSelect()
+    }
+    assert.deepEqual(spy, [
+      ['stage', ['a.txt', 'b/c.txt'], false],
+      ['stash', ['a.txt', 'b/c.txt'], false],
+      ['patch', ['a.txt', 'b/c.txt']],
+      ['discard', ['a.txt', 'b/c.txt'], 2],
+    ])
+  })
+})
+
+describe('change selection keys (Cmd/Ctrl+click)', () => {
+  const change = (path, staged, status = 'modified') => ({ path, staged, status })
+
+  it('keys a row by path and side so one path can hold two rows', () => {
+    assert.equal(rowKeyOf(change('a.txt', false)), 'a.txt:w')
+    assert.equal(rowKeyOf(change('a.txt', true)), 'a.txt:s')
+    assert.equal(dirKeyOf('docs', false), 'd:w:docs')
+    assert.equal(dirKeyOf('a/b', true), 'd:s:a/b')
+  })
+
+  it('treats a file as selected through any selected ancestor folder', () => {
+    const selected = new Set([dirKeyOf('docs', false)])
+    assert.ok(isRowInSelection(selected, 'docs/api.txt:w', 'docs/api.txt', false))
+    assert.ok(isRowInSelection(selected, 'docs/img/logo.png:w', 'docs/img/logo.png', false))
+    assert.ok(!isRowInSelection(selected, 'docs/api.txt:s', 'docs/api.txt', true))
+    assert.ok(!isRowInSelection(selected, 'other/api.txt:w', 'other/api.txt', false))
+  })
+
+  it('does not treat a sibling with a shared prefix as inside the folder', () => {
+    const selected = new Set([dirKeyOf('docs', false)])
+    assert.ok(!isRowInSelection(selected, 'docs2/a.txt:w', 'docs2/a.txt', false))
+  })
+
+  it('keeps a folder selection alive only while it still has changes', () => {
+    const selectedKey = dirKeyOf('docs', false)
+    assert.ok(isSelectedDirAlive(selectedKey, [change('docs/a.txt', false)]))
+    assert.ok(isSelectedDirAlive(selectedKey, [change('docs', false, 'untracked')]))
+    assert.ok(!isSelectedDirAlive(selectedKey, [change('docs/a.txt', true)]))
+    assert.ok(!isSelectedDirAlive(selectedKey, [change('docshell/a.txt', false)]))
+    assert.ok(!isSelectedDirAlive('a.txt:w', [change('a.txt', false)]))
+  })
+})
+
+describe('buildChangeMenuItems multi target', () => {
+  const change = (path, staged, status = 'modified', isDirectory = false) => ({ path, staged, status, isDirectory })
+  const spyCbs = (spy) => ({
+    view: () => {},
+    reveal: { label: 'menu.revealFinder', run: (p) => spy.push(['reveal', p]) },
+    stage: (paths, side) => spy.push(['stage', paths, side]),
+    stash: (paths, untracked) => spy.push(['stash', paths, untracked]),
+    patch: (paths) => spy.push(['patch', paths]),
+    ignore: (patterns) => spy.push(['ignore', patterns]),
+    discard: (paths, count) => spy.push(['discard', paths, count]),
+    t: (key, params) => (params === undefined ? key : `${key}:${JSON.stringify(params)}`),
+  })
+
+  it('counts every selected folder, not just the one right-clicked', () => {
+    const spy = []
+    const target = {
+      kind: 'multi',
+      stagedSide: false,
+      leaves: [change('a/1.txt', false), change('a/2.txt', false), change('b/1.txt', false)],
+      revealPath: 'a',
+    }
+    const items = buildChangeMenuItems(target, spyCbs(spy))
+    assert.equal(items.find((i) => i.key === 'stage').label, 'menu.stageFiles:{"n":3}')
+    items.find((i) => i.key === 'discard').onSelect()
+    assert.deepEqual(spy, [['discard', ['a/1.txt', 'a/2.txt', 'b/1.txt'], 3]])
+  })
+
+  it('keeps show-in-Finder when the right-click landed on a selected folder', () => {
+    const spy = []
+    const items = buildChangeMenuItems({
+      kind: 'multi', stagedSide: false, revealPath: 'a',
+      leaves: [change('a/1.txt', false), change('b/1.txt', false)],
+    }, spyCbs(spy))
+    items.find((i) => i.key === 'reveal').onSelect()
+    assert.deepEqual(spy, [['reveal', 'a']])
+  })
+
+  it('drops show-in-Finder when the selection has no single folder target', () => {
+    const items = buildChangeMenuItems({
+      kind: 'multi', stagedSide: false,
+      leaves: [change('a.txt', false), change('b.txt', false)],
+    }, spyCbs([]))
+    assert.ok(!items.some((i) => i.key === 'reveal'))
+  })
+})
+
+describe('resolveMenuTarget (right-click inside a multi-selection)', () => {
+  const change = (path, staged = false) => ({ path, staged, status: 'modified' })
+  const dirTarget = (dir, leaves) => ({ kind: 'dir', dir, stagedSide: false, leaves })
+
+  it('covers both selected folders, not just the one right-clicked', () => {
+    const selected = new Set([dirKeyOf('a', false), dirKeyOf('b', false)])
+    const leaves = [change('a/1.txt'), change('a/2.txt'), change('b/1.txt')]
+    const target = resolveMenuTarget({
+      selected, rowKey: dirKeyOf('a', false), inSelection: true, stagedSide: false,
+      leaves, single: dirTarget('a', leaves.slice(0, 2)),
+    })
+    assert.equal(target.kind, 'multi')
+    assert.equal(target.leaves.length, 3)
+    assert.equal(target.revealPath, 'a')
+  })
+
+  it('keeps the folder target when only that folder is selected', () => {
+    const selected = new Set([dirKeyOf('a', false)])
+    const leaves = [change('a/1.txt')]
+    const target = resolveMenuTarget({
+      selected, rowKey: dirKeyOf('a', false), inSelection: true, stagedSide: false,
+      leaves, single: dirTarget('a', leaves),
+    })
+    assert.equal(target.kind, 'dir')
+  })
+
+  it('keeps a single file target when nothing else is selected', () => {
+    const selected = new Set(['a.txt:w'])
+    const single = { kind: 'file', change: change('a.txt') }
+    const target = resolveMenuTarget({
+      selected, rowKey: 'a.txt:w', inSelection: true, stagedSide: false,
+      leaves: [change('a.txt')], single,
+    })
+    assert.equal(target.kind, 'file')
+  })
+
+  it('targets only the clicked row when it is outside the selection', () => {
+    const selected = new Set([dirKeyOf('a', false)])
+    const single = { kind: 'file', change: change('c.txt') }
+    const target = resolveMenuTarget({
+      selected, rowKey: 'c.txt:w', inSelection: false, stagedSide: false,
+      leaves: [change('a/1.txt')], single,
+    })
+    assert.equal(target, single)
+  })
+
+  it('includes a selected folder when a file is right-clicked inside it', () => {
+    const selected = new Set([dirKeyOf('a', false), 'b.txt:w'])
+    const leaves = [change('a/1.txt'), change('b.txt')]
+    const target = resolveMenuTarget({
+      selected, rowKey: 'b.txt:w', inSelection: true, stagedSide: false,
+      leaves, single: { kind: 'file', change: change('b.txt') },
+    })
+    assert.equal(target.kind, 'multi')
+    assert.equal(target.leaves.length, 2)
+    assert.equal(target.revealPath, undefined)
   })
 })

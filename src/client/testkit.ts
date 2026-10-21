@@ -10,6 +10,7 @@ export { isSafePath, isSafeRev, isSafeBranchName, isSafeRemoteName, isSafeRemote
 export { planAction, planContinueAbort, pickDefaultRemote, resolvePushRemote, isNetworkCommand, partitionUntracked, isEmptyCherryPick, renameStashReflogEntry, stashReflogMessage } from '../host/actions.ts'
 export { buildSideBySide, summarize, isBinaryDiff, isAddOnlyDiff, isDeleteOnlyDiff, isLargeDiff, diffLineCount, LARGE_DIFF_LINES, LARGE_DIFF_BYTES, extractAddedContent, extractDeletedContent, isImagePath, isSvgPath, intraLineDiff, spliceGap, contextRowsFromLines, flattenToUnified, GAP_STEP } from './diff.ts'
 export { buildFileTree } from './file-tree.ts'
+export { buildChangeMenuItems, buildSelectionMenuItems, dirKeyOf, isRowInSelection, isSelectedDirAlive, resolveMenuTarget, rowKeyOf, sideKeyOf } from './change-menu.ts'
 export { buildBranchFolderTree, orderBranchesWithDefaultFirst, splitDefaultBranch, expandGroup } from './branch-groups.ts'
 export { detectRemoteProtocol, convertRemoteUrl } from './remote-url.ts'
 export { escapeIgnorePattern, extensionPattern, ignorePatternsForFile, ignorePatternForDir } from './ignore-pattern.ts'
