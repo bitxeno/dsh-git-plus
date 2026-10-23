@@ -588,6 +588,9 @@ const CSS = `
 .gp-delbranch{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dsw-alias-label-primary)}
 .gp-delbranch__icon{display:inline-flex;flex:none;color:var(--dsw-alias-label-tertiary)}
 .gp-delbranch__name{font-family:var(--dsw-font-mono,ui-monospace,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Delete-tag mirrors the compact delete-branch dialog. */
+.gp-delbranch__label{flex:none;color:var(--dsw-alias-label-secondary)}
+.gp-delete-tag__remote{margin:0}
 /* apply-stash dialog: target row (label + stash icon + "stash@{n} message")
  * and the muted note under the "delete after applying" checkbox. */
 .gp-stash{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-alias-label-primary);min-width:0}

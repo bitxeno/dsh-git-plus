@@ -170,7 +170,7 @@ export type GitAction =
     /** Host-resolved push target (origin, else the first remote). */
     readonly pushRemote?: string
   }
-  | { readonly kind: 'delete-tag'; readonly name: string }
+  | { readonly kind: 'delete-tag'; readonly name: string; /** Also delete this tag from each configured remote. */ readonly remotes?: readonly string[] }
   | {
     readonly kind: 'merge'
     readonly branch: string

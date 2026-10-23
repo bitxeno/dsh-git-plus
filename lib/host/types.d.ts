@@ -196,7 +196,8 @@ export type GitAction = {
     readonly pushRemote?: string;
 } | {
     readonly kind: 'delete-tag';
-    readonly name: string;
+    readonly name: string; /** Also delete this tag from each configured remote. */
+    readonly remotes?: readonly string[];
 } | {
     readonly kind: 'merge';
     readonly branch: string;

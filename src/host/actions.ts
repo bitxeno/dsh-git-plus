@@ -214,7 +214,15 @@ export function planAction(action: GitAction, unborn: boolean, platform: NodeJS.
     }
     case 'delete-tag': {
       if (!isSafeRev(action.name)) return { error: 'invalid-name', message: `unsafe tag name: ${action.name}` }
-      return { argv: [['git', 'tag', '-d', '--end-of-options', action.name]] }
+      const remotes = [...new Set(action.remotes ?? [])]
+      for (const remote of remotes) {
+        if (!isSafeRemoteName(remote)) return { error: 'invalid-name', message: `unsafe remote: ${remote}` }
+      }
+      // Delete remote copies first so a network failure leaves the local tag
+      // available for retry. Only remove it locally after every remote succeeds.
+      const argv = remotes.map((remote) => ['git', 'push', '--delete', '--end-of-options', remote, `refs/tags/${action.name}`])
+      argv.push(['git', 'tag', '-d', '--end-of-options', action.name])
+      return { argv }
     }
     case 'merge': {
       if (!isSafeRev(action.branch)) return { error: 'invalid-name', message: `unsafe branch: ${action.branch}` }
@@ -411,6 +419,11 @@ export async function runAction(
       // partial state instead of a bare push failure.
       if (action.kind === 'delete-branch' && action.remote !== undefined && action.remote !== '' && step > 0) {
         return { ok: false, error: { code: 'git-error', message: `branch deleted locally, but remote delete failed: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
+      }
+      // delete-tag + remote: preserve the local tag when a remote delete fails.
+      if (action.kind === 'delete-tag' && (action.remotes?.length ?? 0) > 0 && step < new Set(action.remotes).size) {
+        const remote = [...new Set(action.remotes)][step] ?? ''
+        return { ok: false, error: { code: 'git-error', message: `remote tag delete failed${remote !== '' ? ` on ${remote}` : ''}; local tag was kept: ${stderr.trim() || `git exited ${outcome.run.exitCode}`}` } }
       }
       // Merge/pull conflicts: surface as a typed conflicted result with the file
       // list so the client can jump straight to the conflict banner.

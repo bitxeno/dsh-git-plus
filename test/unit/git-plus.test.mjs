@@ -203,6 +203,17 @@ describe('planAction git-plus', () => {
     const bad = planAction({ kind: 'stash-apply', index: -1 }, false)
     assert.ok('error' in bad)
   })
+  it('plans delete-tag locally and across selected remotes', () => {
+    const local = planAction({ kind: 'delete-tag', name: 'v2.7.1-patch.4' }, false)
+    assert.deepEqual(local.argv, [['git', 'tag', '-d', '--end-of-options', 'v2.7.1-patch.4']])
+    const remote = planAction({ kind: 'delete-tag', name: 'v2.7.1-patch.4', remotes: ['origin', 'upstream', 'origin'] }, false)
+    assert.deepEqual(remote.argv, [
+      ['git', 'push', '--delete', '--end-of-options', 'origin', 'refs/tags/v2.7.1-patch.4'],
+      ['git', 'push', '--delete', '--end-of-options', 'upstream', 'refs/tags/v2.7.1-patch.4'],
+      ['git', 'tag', '-d', '--end-of-options', 'v2.7.1-patch.4'],
+    ])
+    assert.ok('error' in planAction({ kind: 'delete-tag', name: 'v1.0.0', remotes: ['bad/remote'] }, false))
+  })
   it('plans create-tag lightweight and annotated', () => {
     const l = planAction({ kind: 'create-tag', name: 'v1.0.0' }, false)
     assert.ok('argv' in l)

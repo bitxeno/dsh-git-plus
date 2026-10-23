@@ -33,6 +33,7 @@ import { CreatePatchModal } from './modals/CreatePatch'
 import { EditRemoteModal } from './modals/EditRemote'
 import { ResetBranchModal } from './modals/ResetBranch'
 import { DeleteBranchModal } from './modals/DeleteBranch'
+import { DeleteTagModal } from './modals/DeleteTag'
 import { FilePreviewModal } from './modals/FilePreview'
 import { TrackRemoteModal } from './modals/TrackRemote'
 import { RenameBranchModal } from './modals/RenameBranch'
@@ -62,6 +63,7 @@ type ModalState =
   | { kind: 'revert'; ref: string; shortHash: string; subject: string }
   | { kind: 'create-patch'; ref: string; shortHash: string; subject: string }
   | { kind: 'delete-branch'; name: string; remote: string | null; remoteIsGitHub: boolean }
+  | { kind: 'delete-tag'; name: string; remotes: readonly string[] }
   | { kind: 'edit-remote'; name: string; url: string }
   | { kind: 'track'; remote: string; localNames: readonly string[] }
   | { kind: 'preview'; path: string }
@@ -282,12 +284,7 @@ export function Panel({ ctx, sessionId, t }: PanelProps): JSX.Element {
           })
           return
         }
-        setModal({
-          kind: 'confirm',
-          title: t('modal.deleteTagTitle'),
-          message: t('modal.deleteConfirm'),
-          action: { kind: 'delete-tag', name },
-        })
+        setModal({ kind: 'delete-tag', name, remotes: opts?.remotes ?? [] })
       },
       ...(narrow ? {
         mode: 'drawer' as const,
@@ -361,6 +358,7 @@ interface ModalCtx {
 function renderModal(modal: NonNullable<ModalState>, ctx: ModalCtx): JSX.Element {
   if (modal.kind === 'branch') return h(CreateBranchModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.startPoint !== undefined ? { startPoint: modal.startPoint } : {}) })
   if (modal.kind === 'tag') return h(CreateTagModal, { t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction, ...(modal.ref !== undefined ? { initialRef: modal.ref } : {}) })
+  if (modal.kind === 'delete-tag') return h(DeleteTagModal, { t: ctx.t, tagName: modal.name, remotes: modal.remotes, onClose: ctx.onClose, onSubmit: ctx.onAction })
   if (modal.kind === 'stash') return h(StashSaveModal, {
     t: ctx.t, onClose: ctx.onClose, onSubmit: ctx.onAction,
     ...(modal.paths !== undefined ? { paths: modal.paths } : {}),

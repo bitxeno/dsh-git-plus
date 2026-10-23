@@ -39,7 +39,7 @@ interface SidebarProps {
   readonly onAction: (action: GitAction) => Promise<{ ok: boolean; error?: string }>
   readonly onOpenModal: (modal: 'branch' | 'tag' | 'merge' | 'stash' | 'fetch' | 'pull' | 'push' | 'track', preset?: string, localNames?: readonly string[]) => void
   readonly onCheckoutRef: (ref: string, subject: string) => void
-  readonly onDeleteRef: (kind: 'branch' | 'tag' | 'remote-branch', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean }) => void
+  readonly onDeleteRef: (kind: 'branch' | 'tag' | 'remote-branch', name: string, opts?: { readonly remote?: string | null; readonly remoteIsGitHub?: boolean; readonly remotes?: readonly string[] }) => void
   readonly onEditRemote: (remote: string, url: string) => void
   readonly onPushBranch: (branch: string, remote: string) => void
   readonly onPushTag: (tag: string, remote: string) => void
@@ -445,7 +445,7 @@ export function Sidebar(props: SidebarProps): JSX.Element {
       { key: 'cp', label: t('menu.copyTagName'), onSelect: () => void copyText(menu.name) },
       {
         key: 'del', label: t('side.delete'), danger: true,
-        onSelect: () => onDeleteRef('tag', (menu as { name: string }).name),
+        onSelect: () => onDeleteRef('tag', menu.name, { remotes: tree?.remotes ?? [] }),
       },
     ]
 
