@@ -41,6 +41,21 @@ function tabLabel(btn: HTMLButtonElement): string {
   return (clone.textContent ?? '').trim()
 }
 
+/**
+ * Element that should hold the dot. Newer shells wrap the tab label in a
+ * block-level span (for ellipsis), so appending the dot to the button itself
+ * puts it after that block and wraps it onto a second line; appending it
+ * inside the label wrapper keeps both on one line. Older shells render the
+ * label as a bare text node, where the button is the right host.
+ */
+function dotHost(btn: HTMLButtonElement): HTMLElement {
+  for (const child of Array.from(btn.children)) {
+    if (!(child instanceof HTMLElement) || child.hasAttribute(DOT_ATTR)) continue
+    if ((child.textContent ?? '').trim() !== '') return child
+  }
+  return btn
+}
+
 /** Reconcile the dot on the current tab to the current dirty flag. */
 function apply(): void {
   const btn = findTab(currentLabel)
@@ -59,7 +74,7 @@ function apply(): void {
   dot.className = cls
   dot.setAttribute(DOT_ATTR, '')
   dot.setAttribute('aria-hidden', 'true')
-  btn.appendChild(dot)
+  dotHost(btn).appendChild(dot)
 }
 
 /** (Re)attach the observer to the live tab-list container. */
