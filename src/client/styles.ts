@@ -612,6 +612,14 @@ const CSS = `
 .gp-toolbtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .gp-toolbtn svg{flex:none}
 .gp-toolbtn-label{max-width:140px;overflow:hidden;text-overflow:ellipsis}
+/* On phones, the branch-name tap target starts as the icon only. Tapping the
+ * icon reveals the label; it never becomes the desktop panel-switch action. */
+@media (max-width:600px), (pointer:coarse){
+  .gp-toolbtn{width:32px;justify-content:center;padding:0;gap:0}
+  .gp-toolbtn-label{display:none}
+  .gp-toolbtn--branch-revealed{width:auto;justify-content:flex-start;padding:0 7px;gap:5px}
+  .gp-toolbtn--branch-revealed .gp-toolbtn-label{display:inline-block;max-width:160px}
+}
 
 /* All Commits top/bottom layout (git-graph-plus BottomPanel) */
 .ggp{display:flex;flex-direction:column;height:100%;min-height:0;flex:1}

@@ -3,9 +3,9 @@
  * mode/access-mode selector) — same design as dsh-git-manager:
  * a transparent 28px tool button with a Lucide git-branch icon + the branch
  * name only (no repo name, no status colours). Shown only inside a git repo;
- * click opens the Git Plus panel (toggles back when already active).
+ * desktop click opens the Git Plus panel, while mobile click reveals the name.
  */
-import { createElement as h, useEffect, useRef } from 'react'
+import { createElement as h, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { useGitView } from './registry'
 import { hasSession } from './rpc'
@@ -17,6 +17,8 @@ interface PillProps {
   readonly sessionId?: string
   readonly t: (key: GitKey, params?: Record<string, string | number>) => string
 }
+
+const MOBILE_QUERY = '(max-width: 600px), (pointer: coarse)'
 
 /** Lucide git-branch icon (24×24), same paths as dsh-git-manager. */
 function BranchGlyph(): JSX.Element {
@@ -35,6 +37,21 @@ function BranchGlyph(): JSX.Element {
 export function GitPill({ sessionId, t }: PillProps): JSX.Element | null {
   const view = useGitView(sessionId)
   const dotOwner = useRef(Symbol('gp-tab-dot'))
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches,
+  )
+  const [branchRevealed, setBranchRevealed] = useState(false)
+
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY)
+    const sync = (): void => {
+      setMobile(query.matches)
+      if (!query.matches) setBranchRevealed(false)
+    }
+    sync()
+    query.addEventListener('change', sync)
+    return () => { query.removeEventListener('change', sync) }
+  }, [])
 
   // Tab dirty dot (VSCode-style): shown iff the worktree has uncommitted
   // changes, independent of the input-bar marker toggle.
@@ -55,6 +72,10 @@ export function GitPill({ sessionId, t }: PillProps): JSX.Element | null {
   const dirty = snap.dirty || (snap.conflictFiles?.length ?? 0) > 0 || snap.operation !== null
 
   const onClick = (): void => {
+    if (mobile) {
+      setBranchRevealed((revealed) => !revealed)
+      return
+    }
     if (isGitTabActive(label)) { returnToConversation(label); return }
     if (hasSession(sessionId)) {
       requestSubTab(sessionId, dirty ? 'local' : 'commits')
@@ -63,9 +84,11 @@ export function GitPill({ sessionId, t }: PillProps): JSX.Element | null {
   }
 
   return h('button', {
-    type: 'button', className: 'gp-toolbtn',
-    title: `Git Plus\n${snap.root}`,
-    'aria-label': t('panel.tab'),
+    type: 'button',
+    className: `gp-toolbtn${mobile ? ' gp-toolbtn--mobile' : ''}${branchRevealed ? ' gp-toolbtn--branch-revealed' : ''}`,
+    title: mobile ? branch : `Git Plus\n${snap.root}`,
+    'aria-label': mobile ? (branchRevealed ? branch : `${branch} — ${t('panel.tab')}`) : t('panel.tab'),
+    'aria-expanded': mobile ? branchRevealed : undefined,
     onClick,
   }, [
     h(BranchGlyph, { key: 'i' }),
